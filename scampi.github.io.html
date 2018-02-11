@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<!-- saved from url=(0035)http://scampi.github.io/gosparqled/ -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+        
+        <meta content="utf-8" http-equiv="encoding">
+
+        <!--CSS for YASQE and YASR-->
+        <link href="./scampi.github.io_files/yasr.min.css" rel="stylesheet" type="text/css">
+        <link href="./scampi.github.io_files/yasqe.min.css" rel="stylesheet" type="text/css">
+
+        <script type="text/javascript">
+            // Default configuration
+            var sparqled = function() {
+                var config = { endpoint : "http://dbpedia.org/sparql" };
+                return { config : config };
+            }();
+        </script>
+
+        <style>
+            #loading {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 50%;
+                width: 50%;
+                z-index: 9999999;
+                background: url('loading.gif') center center no-repeat;
+                opacity: 0.7;
+                filter: alpha(opacity=70); /* ie */
+                -moz-opacity: 0.7; /* mozilla */
+                display:none;
+            }
+        </style>
+    
+    </head>
+    <body style="margin:0px;">
+
+        <form name="endpoint" action="javascript:updateEndpoint()">
+            Endpoint: <input type="text" size="50%" name="url" value="http://dbpedia.org/sparql">
+            <input type="submit" value="Submit">
+        </form>
+        <pre><span id="endpoint"></span></pre>
+
+        <div id="loading"></div>
+        
+        <div id="yasqe"></div>
+        <div id="yasr"></div>
+
+        <!--YASQE and YASRE libraries-->
+        <script src="./scampi.github.io_files/jquery.min.js"></script>
+        <!-- <script src="./scampi.github.io_files/yasqe.bundled.min.js"></script> -->
+		<script src="./scampi.github.io_files/yasqe.bundled.js"></script>
+        <script src="./scampi.github.io_files/yasr.bundled.min.js"></script>
+        <!--Gosparqled plugin for YASQE-->
+        <script src="./scampi.github.io_files/autocompletion.js"></script>
+        <!--The Gosparqled JS library-->
+        <script src="./scampi.github.io_files/gosparqled.js"></script>
+
+        <script type="text/javascript">
+            // Update the endpoint address
+            function updateEndpoint() {
+                sparqled.config.endpoint = document.endpoint.url.value;
+                yasqe.options.sparql.endpoint = sparqled.config.endpoint;
+                $("#endpoint").text(sparqled.config.endpoint);
+            }
+        </script>
+
+    
+
+</body></html>
