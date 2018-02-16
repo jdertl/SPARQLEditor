@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<!-- saved from url=(0035)http://scampi.github.io/gosparqled/ -->
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<html>
+    <head>
 
-        
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
         <meta content="utf-8" http-equiv="encoding">
 
         <!--CSS for YASQE and YASR-->
-        <link href="./scampi.github.io_files/yasr.min.css" rel="stylesheet" type="text/css">
-        <link href="./scampi.github.io_files/yasqe.min.css" rel="stylesheet" type="text/css">
+        <link href='scampi.github.io_files/yasr.min.css' rel='stylesheet' type='text/css'/>
+        <link href='scampi.github.io_files/yasqe.min.css' rel='stylesheet' type='text/css'/>
 
         <script type="text/javascript">
             // Default configuration
@@ -40,22 +40,28 @@
             Endpoint: <input type="text" size="50%" name="url" value="http://dbpedia.org/sparql">
             <input type="submit" value="Submit">
         </form>
-        <pre><span id="endpoint"></span></pre>
+        <pre><span id='endpoint'></span></pre>
 
         <div id="loading"></div>
         
         <div id="yasqe"></div>
         <div id="yasr"></div>
 
+        <div>
+            <!-- Display error from the Gosparqled library -->
+            <br>
+            <pre><span id='error'></span></pre>
+        </div>
+
         <!--YASQE and YASRE libraries-->
-        <script src="./scampi.github.io_files/jquery.min.js"></script>
-        <!-- <script src="./scampi.github.io_files/yasqe.bundled.min.js"></script> -->
-		<script src="./scampi.github.io_files/yasqe.bundled.js"></script>
-        <script src="./scampi.github.io_files/yasr.bundled.min.js"></script>
+        <script src="scampi.github.io_files/jquery.min.js"></script>
+        <script src='scampi.github.io_files/yasqe.bundled.js'></script>
+        <script src='scampi.github.io_files/yasr.bundled.min.js'></script>
+        <script src="scampi.github.io_files/ansi_up.js"></script>
         <!--Gosparqled plugin for YASQE-->
-        <script src="./scampi.github.io_files/autocompletion.js"></script>
+        <script src="scampi.github.io_files/autocompletion.js"></script>
         <!--The Gosparqled JS library-->
-        <script src="./scampi.github.io_files/gosparqled.js"></script>
+        <script src="scampi.github.io_files/gosparqled.js"></script>
 
         <script type="text/javascript">
             // Update the endpoint address
@@ -66,6 +72,5 @@
             }
         </script>
 
-    
-
-</body></html>
+    </body>
+</html>
