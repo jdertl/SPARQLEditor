@@ -5345,7 +5345,7 @@ CodeMirror.defineMode("sparql11", function(config, parserConfig) {
       // Incremental LL1 parse
       while (state.stack.length > 0 && token && state.OK && !finished) {
         topSymbol = state.stack.pop();
-        if (topSymbol === 'var' && tokenOb.text) state.variables[tokenOb.text] = tokenOb.text;
+
         if (!ll1_table[topSymbol]) {
           // Top symbol is a terminal
           if (topSymbol == token) {
@@ -5381,7 +5381,7 @@ CodeMirror.defineMode("sparql11", function(config, parserConfig) {
               if (colonIndex >= 0) {
                 var prefNs = tokenOb.text.slice(0, colonIndex);
                 //avoid warnings for missing bif prefixes (yuck, virtuoso-specific)
-                if (!state.prefixes[prefNs] && ["bif", "xsd", "sql"].indexOf(prefNs) < 0) {
+                if (!state.prefixes[prefNs] && ["bif", "xsd"].indexOf(prefNs) < 0) {
                   state.OK = false;
                   recordFailurePos();
                   state.errorMsg = "Prefix '" + prefNs + "' is not defined";
@@ -5516,8 +5516,7 @@ CodeMirror.defineMode("sparql11", function(config, parserConfig) {
         inLiteral: false,
         stack: [grammar.startSymbol],
         lastPredicateOffset: config.indentUnit,
-        prefixes: {},
-        variables: {}
+        prefixes: {}
       };
     },
     indent: indent,
@@ -26023,8 +26022,6 @@ function json2Plugin() {
 }
 
 },{"./lib/json2":18}],18:[function(require,module,exports){
-/* eslint-disable */
-
 //  json2.js
 //  2016-10-28
 //  Public Domain.
@@ -26536,24 +26533,76 @@ var util = require('./util')
 var slice = util.slice
 var pluck = util.pluck
 var each = util.each
-var bind = util.bind
 var create = util.create
 var isList = util.isList
 var isFunction = util.isFunction
 var isObject = util.isObject
 
 module.exports = {
-	createStore: createStore
+	createStore: createStore,
 }
 
 var storeAPI = {
-	version: '2.0.12',
+	version: '2.0.4',
 	enabled: false,
-	
+	storage: null,
+
+	// addStorage adds another storage to this store. The store
+	// will use the first storage it receives that is enabled, so
+	// call addStorage in the order of preferred storage.
+	addStorage: function(storage) {
+		if (this.enabled) { return }
+		if (this._testStorage(storage)) {
+			this._storage.resolved = storage
+			this.enabled = true
+			this.storage = storage.name
+		}
+	},
+
+	// addPlugin will add a plugin to this store.
+	addPlugin: function(plugin) {
+		var self = this
+
+		// If the plugin is an array, then add all plugins in the array.
+		// This allows for a plugin to depend on other plugins.
+		if (isList(plugin)) {
+			each(plugin, function(plugin) {
+				self.addPlugin(plugin)
+			})
+			return
+		}
+
+		// Keep track of all plugins we've seen so far, so that we
+		// don't add any of them twice.
+		var seenPlugin = pluck(this._seenPlugins, function(seenPlugin) { return (plugin === seenPlugin) })
+		if (seenPlugin) {
+			return
+		}
+		this._seenPlugins.push(plugin)
+
+		// Check that the plugin is properly formed
+		if (!isFunction(plugin)) {
+			throw new Error('Plugins must be function values that return objects')
+		}
+
+		var pluginProperties = plugin.call(this)
+		if (!isObject(pluginProperties)) {
+			throw new Error('Plugins must return an object of function properties')
+		}
+
+		// Add the plugin function properties to this store instance.
+		each(pluginProperties, function(pluginFnProp, propName) {
+			if (!isFunction(pluginFnProp)) {
+				throw new Error('Bad plugin property: '+propName+' from plugin '+plugin.name+'. Plugins should only return functions.')
+			}
+			self._assignPluginFnProp(pluginFnProp, propName)
+		})
+	},
+
 	// get returns the value of the given key. If that value
 	// is undefined, it returns optionalDefaultValue instead.
 	get: function(key, optionalDefaultValue) {
-		var data = this.storage.read(this._namespacePrefix + key)
+		var data = this._storage().read(this._namespacePrefix + key)
 		return this._deserialize(data, optionalDefaultValue)
 	},
 
@@ -26563,27 +26612,27 @@ var storeAPI = {
 		if (value === undefined) {
 			return this.remove(key)
 		}
-		this.storage.write(this._namespacePrefix + key, this._serialize(value))
+		this._storage().write(this._namespacePrefix + key, this._serialize(value))
 		return value
 	},
 
 	// remove deletes the key and value stored at the given key.
 	remove: function(key) {
-		this.storage.remove(this._namespacePrefix + key)
+		this._storage().remove(this._namespacePrefix + key)
 	},
 
 	// each will call the given callback once for each key-value pair
 	// in this store.
 	each: function(callback) {
 		var self = this
-		this.storage.each(function(val, namespacedKey) {
-			callback.call(self, self._deserialize(val), (namespacedKey || '').replace(self._namespaceRegexp, ''))
+		this._storage().each(function(val, namespacedKey) {
+			callback(self._deserialize(val), namespacedKey.replace(self._namespaceRegexp, ''))
 		})
 	},
 
 	// clearAll will remove all the stored key-value pairs in this store.
 	clearAll: function() {
-		this.storage.clearAll()
+		this._storage().clearAll()
 	},
 
 	// additional functionality that can't live in plugins
@@ -26594,50 +26643,43 @@ var storeAPI = {
 		return (this._namespacePrefix == '__storejs_'+namespace+'_')
 	},
 
+	// namespace clones the current store and assigns it the given namespace
+	namespace: function(namespace) {
+		if (!this._legalNamespace.test(namespace)) {
+			throw new Error('store.js namespaces can only have alhpanumerics + underscores and dashes')
+		}
+		// create a prefix that is very unlikely to collide with un-namespaced keys
+		var namespacePrefix = '__storejs_'+namespace+'_'
+		return create(this, {
+			_namespacePrefix: namespacePrefix,
+			_namespaceRegexp: namespacePrefix ? new RegExp('^'+namespacePrefix) : null
+		})
+	},
+
 	// createStore creates a store.js instance with the first
 	// functioning storage in the list of storage candidates,
 	// and applies the the given mixins to the instance.
-	createStore: function() {
-		return createStore.apply(this, arguments)
+	createStore: function(storages, plugins) {
+		return createStore(storages, plugins)
 	},
-	
-	addPlugin: function(plugin) {
-		this._addPlugin(plugin)
-	},
-	
-	namespace: function(namespace) {
-		return createStore(this.storage, this.plugins, namespace)
-	}
 }
 
-function _warn() {
-	var _console = (typeof console == 'undefined' ? null : console)
-	if (!_console) { return }
-	var fn = (_console.warn ? _console.warn : _console.log)
-	fn.apply(_console, arguments)
-}
-
-function createStore(storages, plugins, namespace) {
-	if (!namespace) {
-		namespace = ''
-	}
-	if (storages && !isList(storages)) {
-		storages = [storages]
-	}
-	if (plugins && !isList(plugins)) {
-		plugins = [plugins]
-	}
-
-	var namespacePrefix = (namespace ? '__storejs_'+namespace+'_' : '')
-	var namespaceRegexp = (namespace ? new RegExp('^'+namespacePrefix) : null)
-	var legalNamespaces = /^[a-zA-Z0-9_\-]*$/ // alpha-numeric + underscore and dash
-	if (!legalNamespaces.test(namespace)) {
-		throw new Error('store.js namespaces can only have alphanumerics + underscores and dashes')
-	}
-	
+function createStore(storages, plugins) {
 	var _privateStoreProps = {
-		_namespacePrefix: namespacePrefix,
-		_namespaceRegexp: namespaceRegexp,
+		_seenPlugins: [],
+		_namespacePrefix: '',
+		_namespaceRegexp: null,
+		_legalNamespace: /^[a-zA-Z0-9_\-]+$/, // alpha-numeric + underscore and dash
+
+		_storage: function() {
+			if (!this.enabled) {
+				throw new Error("store.js: No supported storage has been added! "+
+					"Add one (e.g store.addStorage(require('store/storages/cookieStorage')) "+
+					"or use a build with more built-in storages (e.g "+
+					"https://github.com/marcuswestin/store.js/tree/master/dist/store.legacy.min.js)")
+			}
+			return this._storage.resolved
+		},
 
 		_testStorage: function(storage) {
 			try {
@@ -26692,80 +26734,14 @@ function createStore(storages, plugins, namespace) {
 
 			return (val !== undefined ? val : defaultVal)
 		},
-		
-		_addStorage: function(storage) {
-			if (this.enabled) { return }
-			if (this._testStorage(storage)) {
-				this.storage = storage
-				this.enabled = true
-			}
-		},
-
-		_addPlugin: function(plugin) {
-			var self = this
-
-			// If the plugin is an array, then add all plugins in the array.
-			// This allows for a plugin to depend on other plugins.
-			if (isList(plugin)) {
-				each(plugin, function(plugin) {
-					self._addPlugin(plugin)
-				})
-				return
-			}
-
-			// Keep track of all plugins we've seen so far, so that we
-			// don't add any of them twice.
-			var seenPlugin = pluck(this.plugins, function(seenPlugin) {
-				return (plugin === seenPlugin)
-			})
-			if (seenPlugin) {
-				return
-			}
-			this.plugins.push(plugin)
-
-			// Check that the plugin is properly formed
-			if (!isFunction(plugin)) {
-				throw new Error('Plugins must be function values that return objects')
-			}
-
-			var pluginProperties = plugin.call(this)
-			if (!isObject(pluginProperties)) {
-				throw new Error('Plugins must return an object of function properties')
-			}
-
-			// Add the plugin function properties to this store instance.
-			each(pluginProperties, function(pluginFnProp, propName) {
-				if (!isFunction(pluginFnProp)) {
-					throw new Error('Bad plugin property: '+propName+' from plugin '+plugin.name+'. Plugins should only return functions.')
-				}
-				self._assignPluginFnProp(pluginFnProp, propName)
-			})
-		},
-		
-		// Put deprecated properties in the private API, so as to not expose it to accidential
-		// discovery through inspection of the store object.
-		
-		// Deprecated: addStorage
-		addStorage: function(storage) {
-			_warn('store.addStorage(storage) is deprecated. Use createStore([storages])')
-			this._addStorage(storage)
-		}
 	}
 
-	var store = create(_privateStoreProps, storeAPI, {
-		plugins: []
-	})
-	store.raw = {}
-	each(store, function(prop, propName) {
-		if (isFunction(prop)) {
-			store.raw[propName] = bind(store, prop)			
-		}
-	})
+	var store = create(_privateStoreProps, storeAPI)
 	each(storages, function(storage) {
-		store._addStorage(storage)
+		store.addStorage(storage)
 	})
 	each(plugins, function(plugin) {
-		store._addPlugin(plugin)
+		store.addPlugin(plugin)
 	})
 	return store
 }
@@ -26789,7 +26765,7 @@ module.exports = {
 	isList: isList,
 	isFunction: isFunction,
 	isObject: isObject,
-	Global: Global
+	Global: Global,
 }
 
 function make_assign() {
@@ -26846,8 +26822,8 @@ function slice(arr, index) {
 }
 
 function each(obj, fn) {
-	pluck(obj, function(val, key) {
-		fn(val, key)
+	pluck(obj, function(key, val) {
+		fn(key, val)
 		return false
 	})
 }
@@ -26894,15 +26870,15 @@ function isObject(val) {
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
 },{}],21:[function(require,module,exports){
-module.exports = [
+module.exports = {
 	// Listed in order of usage preference
-	require('./localStorage'),
-	require('./oldFF-globalStorage'),
-	require('./oldIE-userDataStorage'),
-	require('./cookieStorage'),
-	require('./sessionStorage'),
-	require('./memoryStorage')
-]
+	'localStorage': require('./localStorage'),
+	'oldFF-globalStorage': require('./oldFF-globalStorage'),
+	'oldIE-userDataStorage': require('./oldIE-userDataStorage'),
+	'cookieStorage': require('./cookieStorage'),
+	'sessionStorage': require('./sessionStorage'),
+	'memoryStorage': require('./memoryStorage'),
+}
 
 },{"./cookieStorage":22,"./localStorage":23,"./memoryStorage":24,"./oldFF-globalStorage":25,"./oldIE-userDataStorage":26,"./sessionStorage":27}],22:[function(require,module,exports){
 // cookieStorage is useful Safari private browser mode, where localStorage
@@ -27231,7 +27207,7 @@ module.exports = {
 	write: write,
 	each: each,
 	remove: remove,
-	clearAll: clearAll
+	clearAll: clearAll,
 }
 
 function sessionStorage() {
@@ -27263,28 +27239,52 @@ function clearAll() {
 
 },{"../src/util":20}],28:[function(require,module,exports){
 module.exports={
-  "_from": "yasgui-utils@^1.6.7",
+  "_args": [
+    [
+      {
+        "raw": "yasgui-utils@1.6.7",
+        "scope": null,
+        "escapedName": "yasgui-utils",
+        "name": "yasgui-utils",
+        "rawSpec": "1.6.7",
+        "spec": "1.6.7",
+        "type": "version"
+      },
+      "/home/lrd900/yasgui/yasqe"
+    ]
+  ],
+  "_from": "yasgui-utils@1.6.7",
   "_id": "yasgui-utils@1.6.7",
-  "_inBundle": false,
-  "_integrity": "sha1-K8/FoxVojeOuYFeIPZrjQrIF8mc=",
+  "_inCache": true,
   "_location": "/yasgui-utils",
+  "_nodeVersion": "7.10.0",
+  "_npmOperationalInternal": {
+    "host": "s3://npm-registry-packages",
+    "tmp": "tmp/yasgui-utils-1.6.7.tgz_1495459781202_0.06725964159704745"
+  },
+  "_npmUser": {
+    "name": "laurens.rietveld",
+    "email": "laurens.rietveld@gmail.com"
+  },
+  "_npmVersion": "4.2.0",
   "_phantomChildren": {},
   "_requested": {
-    "type": "range",
-    "registry": true,
-    "raw": "yasgui-utils@^1.6.7",
-    "name": "yasgui-utils",
+    "raw": "yasgui-utils@1.6.7",
+    "scope": null,
     "escapedName": "yasgui-utils",
-    "rawSpec": "^1.6.7",
-    "saveSpec": null,
-    "fetchSpec": "^1.6.7"
+    "name": "yasgui-utils",
+    "rawSpec": "1.6.7",
+    "spec": "1.6.7",
+    "type": "version"
   },
   "_requiredBy": [
+    "#USER",
     "/"
   ],
   "_resolved": "https://registry.npmjs.org/yasgui-utils/-/yasgui-utils-1.6.7.tgz",
   "_shasum": "2bcfc5a315688de3ae6057883d9ae342b205f267",
-  "_spec": "yasgui-utils@^1.6.7",
+  "_shrinkwrap": null,
+  "_spec": "yasgui-utils@1.6.7",
   "_where": "/home/lrd900/yasgui/yasqe",
   "author": {
     "name": "Laurens Rietveld"
@@ -27292,12 +27292,17 @@ module.exports={
   "bugs": {
     "url": "https://github.com/YASGUI/Utils/issues"
   },
-  "bundleDependencies": false,
   "dependencies": {
     "store": "^2.0.4"
   },
-  "deprecated": false,
   "description": "Utils for YASGUI libs",
+  "devDependencies": {},
+  "directories": {},
+  "dist": {
+    "shasum": "2bcfc5a315688de3ae6057883d9ae342b205f267",
+    "tarball": "https://registry.npmjs.org/yasgui-utils/-/yasgui-utils-1.6.7.tgz"
+  },
+  "gitHead": "6031b1cb732d390b29cd5376dceb9a9d665bbd11",
   "homepage": "https://github.com/YASGUI/Utils",
   "licenses": [
     {
@@ -27308,16 +27313,18 @@ module.exports={
   "main": "src/main.js",
   "maintainers": [
     {
-      "name": "Laurens Rietveld",
-      "email": "laurens.rietveld@gmail.com",
-      "url": "http://laurensrietveld.nl"
+      "name": "laurens.rietveld",
+      "email": "laurens.rietveld@gmail.com"
     }
   ],
   "name": "yasgui-utils",
+  "optionalDependencies": {},
+  "readme": "ERROR: No README data found!",
   "repository": {
     "type": "git",
     "url": "git://github.com/YASGUI/Utils.git"
   },
+  "scripts": {},
   "version": "1.6.7"
 }
 
@@ -27466,7 +27473,7 @@ module.exports = {
 module.exports={
   "name": "yasgui-yasqe",
   "description": "Yet Another SPARQL Query Editor",
-  "version": "2.11.18",
+  "version": "2.11.13",
   "main": "src/main.js",
   "license": "MIT",
   "author": "Laurens Rietveld",
@@ -27476,8 +27483,7 @@ module.exports={
     "build": "gulp",
     "patch": "gulp patch",
     "minor": "gulp minor",
-    "major": "gulp major",
-    "update-interactive": "npm-check --skip-unused -u"
+    "major": "gulp major"
   },
   "devDependencies": {
     "bootstrap-sass": "^3.3.7",
@@ -27487,25 +27493,25 @@ module.exports={
     "exorcist": "^0.4.0",
     "gulp": "^3.9.1",
     "gulp-autoprefixer": "^3.1.0",
-    "gulp-bump": "^2.2.0",
     "gulp-concat": "^2.6.0",
-    "gulp-connect": "^4.2.0",
     "gulp-cssimport": "^3.1.0",
     "gulp-cssnano": "^2.1.2",
-    "gulp-embedlr": "^0.5.2",
     "gulp-filter": "^4.0.0",
-    "gulp-git": "^2.4.1",
     "gulp-jsvalidate": "^2.1.0",
-    "gulp-livereload": "^3.8.1",
     "gulp-notify": "^2.2.0",
     "gulp-rename": "^1.2.2",
     "gulp-sass": "^2.3.2",
     "gulp-sourcemaps": "^1.6.0",
     "gulp-streamify": "1.0.2",
-    "gulp-tag-version": "^1.3.0",
     "gulp-uglify": "^1.5.4",
+    "gulp-bump": "^2.2.0",
+    "gulp-connect": "^4.2.0",
+    "gulp-embedlr": "^0.5.2",
+    "gulp-git": "^1.10.0",
+    "gulp-livereload": "^3.8.1",
+    "gulp-tag-version": "^1.3.0",
     "node-sass": "^3.8.0",
-    "require-dir": "^0.3.2",
+    "require-dir": "^0.3.0",
     "run-sequence": "^1.2.2",
     "vinyl-buffer": "^1.0.0",
     "vinyl-source-stream": "~1.1.0",
@@ -27534,7 +27540,12 @@ module.exports={
   "dependencies": {
     "codemirror": "5.17.0",
     "jquery": "^2.2.4",
-    "prettier": "^1.4.4",
+    "node-sass": "^3.8.0",
+    "require-dir": "^0.3.0",
+    "run-sequence": "^1.2.2",
+    "vinyl-buffer": "^1.0.0",
+    "vinyl-source-stream": "~1.1.0",
+    "vinyl-transform": "1.0.0",
     "yasgui-utils": "^1.6.7"
   },
   "optionalShim": {
@@ -27561,7 +27572,6 @@ var $ = require("jquery"),
   Trie = require("../../lib/trie.js"),
   YASQE = require("../main.js");
 
-// YASQE start
 module.exports = function(YASQE, yasqe) {
   var completionNotifications = {};
   var completers = {};
@@ -27653,12 +27663,19 @@ module.exports = function(YASQE, yasqe) {
       ) {
         return false;
       }
+
+      var hintConfig = {
+        closeCharacters: /(?=a)b/,
+        completeSingle: false
+      };
+      if (!completer.bulk && completer.async) {
+        hintConfig.async = true;
+      }
+      var wrappedHintCallback = function(yasqe, callback) {
+        return getCompletionHintsObject(completer, callback);
+      };
+      var result = YASQE.showHint(yasqe, wrappedHintCallback, hintConfig);
       return true;
-    };
-	var validCompleters = [];
-    var hintConfig = {
-      closeCharacters: /(?=a)b/,
-      completeSingle: false
     };
     for (var completerName in completers) {
       if ($.inArray(completerName, yasqe.options.autocompleters) == -1) continue; //this completer is disabled
@@ -27677,25 +27694,70 @@ module.exports = function(YASQE, yasqe) {
       if (completer.callbacks && completer.callbacks.validPosition) {
         if (completer.callbacks.validPosition(yasqe, completer) === false) continue;
       }
-      if (tryHintType(completer)) {
-        if (!completer.bulk && completer.async) {
-          hintConfig.async = true;
-        }
-		validCompleters.push(completer);
-	  }
+      var success = tryHintType(completer);
+      if (success) break;
     }
-	if (validCompleters.length > 0) {
-      var wrappedHintCallback = function(yasqe, callback) {
-        return getCompletionHintsObject(validCompleters, callback, hintConfig.async);
-      };
-      YASQE.showHint(yasqe, wrappedHintCallback, hintConfig);
-	}
   };
 
-  var getCompletionHintsObject = function(validCompleters, callback, shouldCallback) {
-	var token = yasqe.getCompleteToken();
-	var hintList = [];
-	var cur = yasqe.getCursor();
+  var getCompletionHintsObject = function(completer, callback) {
+    var getSuggestionsFromToken = function(partialToken) {
+      var stringToAutocomplete = partialToken.autocompletionString || partialToken.string;
+      var suggestions = [];
+      if (tries[completer.name]) {
+        suggestions = tries[completer.name].autoComplete(stringToAutocomplete);
+      } else if (typeof completer.get == "function" && completer.async == false) {
+        suggestions = completer.get(stringToAutocomplete);
+      } else if (typeof completer.get == "object") {
+        var partialTokenLength = stringToAutocomplete.length;
+        for (var i = 0; i < completer.get.length; i++) {
+          var completion = completer.get[i];
+          if (completion.slice(0, partialTokenLength) == stringToAutocomplete) {
+            suggestions.push(completion);
+          }
+        }
+      }
+      return getSuggestionsAsHintObject(suggestions, completer, partialToken);
+    };
+
+    var token = yasqe.getCompleteToken();
+    if (completer.preProcessToken) {
+      token = completer.preProcessToken(token);
+    }
+
+    if (token) {
+      // use custom completionhint function, to avoid reaching a loop when the
+      // completionhint is the same as the current token
+      // regular behaviour would keep changing the codemirror dom, hence
+      // constantly calling this callback
+      if (!completer.bulk && completer.async) {
+        var wrappedCallback = function(suggestions) {
+          callback(getSuggestionsAsHintObject(suggestions, completer, token));
+        };
+        completer.get(token, wrappedCallback);
+      } else {
+        return getSuggestionsFromToken(token);
+      }
+    }
+  };
+
+  /**
+	 *  get our array of suggestions (strings) in the codemirror hint format
+	 */
+  var getSuggestionsAsHintObject = function(suggestions, completer, token) {
+    var hintList = [];
+    for (var i = 0; i < suggestions.length; i++) {
+      var suggestedString = suggestions[i];
+      if (completer.postProcessToken) {
+        suggestedString = completer.postProcessToken(token, suggestedString);
+      }
+      hintList.push({
+        text: suggestedString,
+        displayText: suggestedString,
+        hint: selectHint
+      });
+    }
+
+    var cur = yasqe.getCursor();
     var returnObj = {
       completionToken: token.string,
       list: hintList,
@@ -27708,94 +27770,16 @@ module.exports = function(YASQE, yasqe) {
         ch: token.end
       }
     };
-	var asyncTracker = 0;
-	for (var cI in validCompleters) {
-	  var completer = validCompleters[cI];
-	  var tempToken = token;
-      if (completer.preProcessToken) {
-        tempToken = completer.preProcessToken(tempToken);
-      }
-	  if (tempToken) {
-        // use custom completionhint function, to avoid reaching a loop when the
-        // completionhint is the same as the current token
-        // regular behaviour would keep changing the codemirror dom, hence
-        // constantly calling this callback
-        if (!completer.bulk && completer.async) {
-		  asyncTracker = asyncTracker + 1;
-          var wrappedCallback = function(suggestions) {
-            getSuggestionsAsHintObject(suggestions, completer, tempToken, hintList);
-			asyncTracker = asyncTracker - 1;
-			if (asyncTracker == 0) {
-			  finalizeCompleterCallbacks(validCompleters);
-			  var wrappedCallback = function() {
-				return returnObj;
-			  };
-			  callback(returnObj);
-			}
-          };
-          completer.get(tempToken, wrappedCallback);
-        } else {
-          getSuggestionsFromToken(tempToken, completer, hintList);
-        }
-		// INCOMPLETE!
-	  }
-	}
-	// INCOMPLETE
-	if (!shouldCallback) {
-		finalizeCompleterCallbacks(validCompleters);
-		return returnObj;
-	}
-  };
-
-  var getSuggestionsFromToken = function(partialToken, completer, hintList) {
-    var stringToAutocomplete = partialToken.autocompletionString || partialToken.string;
-    var suggestions = [];
-    if (tries[completer.name]) {
-      suggestions = tries[completer.name].autoComplete(stringToAutocomplete);
-    } else if (typeof completer.get == "function" && completer.async == false) {
-      suggestions = completer.get(stringToAutocomplete);
-    } else if (typeof completer.get == "object") {
-      var partialTokenLength = stringToAutocomplete.length;
-      for (var i = 0; i < completer.get.length; i++) {
-        var completion = completer.get[i];
-        if (completion.slice(0, partialTokenLength) == stringToAutocomplete) {
-          suggestions.push(completion);
+    //if we have some autocompletion handlers specified, add these these to the object. Codemirror will take care of firing these
+    if (completer.callbacks) {
+      for (var callbackName in completer.callbacks) {
+        if (completer.callbacks[callbackName]) {
+          YASQE.on(returnObj, callbackName, completer.callbacks[callbackName]);
         }
       }
     }
-    getSuggestionsAsHintObject(suggestions, completer, partialToken, hintList);
+    return returnObj;
   };
-
-  /**
-	 *  get our array of suggestions (strings) in the codemirror hint format
-	 */
-  var getSuggestionsAsHintObject = function(suggestions, completer, token, hintList) {
-    for (var i = 0; i < suggestions.length; i++) {
-      var suggestedString = suggestions[i];
-      if (completer.postProcessToken) {
-        suggestedString = completer.postProcessToken(token, suggestedString);
-      }
-      hintList.push({
-        text: suggestedString,
-        displayText: suggestedString,
-        hint: selectHint
-      });
-    }
-  };
-
-  var finalizeCompleterCallbacks = function(validCompleters) {
-	for (var cI in validCompleters) {
-      //if we have some autocompletion handlers specified, add these these to the object. Codemirror will take care of firing these
-	  var completer = validCompleters[cI];
-      if (completer.callbacks) {
-        for (var callbackName in completer.callbacks) {
-          if (completer.callbacks[callbackName]) {
-            YASQE.on(returnObj, callbackName, completer.callbacks[callbackName]);
-          }
-        }
-      }
-	}
-  }
 
   return {
     init: initCompleter,
@@ -27811,7 +27795,11 @@ module.exports = function(YASQE, yasqe) {
             completionNotifications[completer.name] = $("<div class='completionNotification'></div>");
           completionNotifications[completer.name]
             .show()
-            .text("Press CTRL - <spacebar> to autocomplete")
+            .text(
+              "Press " +
+                (navigator.userAgent.indexOf("Mac OS X") != -1 ? "CMD" : "CTRL") +
+                " - <spacebar> to autocomplete"
+            )
             .appendTo($(yasqe.getWrapperElement()));
         }
       },
@@ -28206,7 +28194,7 @@ module.exports = function(yasqe) {
       var token = yasqe.getTokenAt(yasqe.getCursor());
       if (token.type != "ws") {
         token = yasqe.getCompleteToken(token);
-        if (token && (token.string[0] === '?' || token.string[0] === '$')) {
+        if (token && token.string.indexOf("?") == 0) {
           return true;
         }
       }
@@ -28216,10 +28204,9 @@ module.exports = function(yasqe) {
       if (token.trim().length == 0) return []; //nothing to autocomplete
       var distinctVars = {};
       //do this outside of codemirror. I expect jquery to be faster here (just finding dom elements with classnames)
-      //and: this'll still work when the query is incorrect (i.e., when simply typing '?')
       $(yasqe.getWrapperElement()).find(".cm-atom").each(function() {
         var variable = this.innerHTML;
-        if (variable[0] === '?' || variable[0] === '$') {
+        if (variable.indexOf("?") == 0) {
           //ok, lets check if the next element in the div is an atom as well. In that case, they belong together (may happen sometimes when query is not syntactically valid)
           var nextEl = $(this).next();
           var nextElClass = nextEl.attr("class");
@@ -28468,13 +28455,13 @@ module.exports = require("./main.js");
 },{"./main.js":43}],42:[function(require,module,exports){
 "use strict";
 module.exports = {
-  query: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><path d="M64.622 2.41H14.995c-6.627 0-12 5.374-12 12V64.31c0 6.627 5.373 12 12 12h49.627c6.627 0 12-5.373 12-12V14.41c0-6.627-5.373-12-12-12zM24.125 63.907V15.093L61 39.168 24.125 63.906z"/></svg>',
-  queryInvalid: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 73.627 73.897"><path d="M61.627 0H12C5.373 0 0 5.373 0 12v49.897c0 6.627 5.373 12 12 12h49.627c6.627 0 12-5.373 12-12V12c0-6.628-5.373-12-12-12zM21.13 61.495V12.682l36.875 24.075L21.13 61.495z"/><path d="M66.13 65.904H49.77c-1.647 0-2.89-.58-3.5-1.636-.608-1.056-.49-2.422.334-3.848l8.18-14.167c.822-1.427 1.947-2.212 3.165-2.212s2.342.786 3.165 2.213l8.18 14.167c.824 1.426.942 2.792.333 3.848-.61 1.055-1.852 1.636-3.5 1.636zm-6.51-4.986c0-.85-.69-1.54-1.54-1.54-.85 0-1.54.69-1.54 1.54 0 .85.69 1.54 1.54 1.54.85 0 1.54-.69 1.54-1.54zm.04-9.266c0-.873-.708-1.58-1.58-1.58-.874 0-1.582.707-1.582 1.58l.374 5.61h.005c.054.62.568 1.108 1.202 1.108.586 0 1.075-.415 1.188-.968.01-.045.01-.093.014-.14h.01l.368-5.61z" fill="#a80"/></svg>',
-  download: '<svg xmlns="http://www.w3.org/2000/svg" baseProfile="tiny" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M88 84v-2c0-2.96-.86-4-4-4H16c-2.96 0-4 .98-4 4v2c0 3.102 1.04 4 4 4h68c3.02 0 4-.96 4-4zM58 12H42c-5 0-6 .94-6 6v22H16l34 34 34-34H64V18c0-5.06-1.06-6-6-6z"/></svg>',
-  share: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M36.764 50c0 .308-.07.598-.088.905l32.247 16.12c2.76-2.34 6.293-3.798 10.195-3.798C87.89 63.227 95 70.337 95 79.11 95 87.89 87.89 95 79.118 95c-8.78 0-15.882-7.11-15.882-15.89 0-.317.07-.6.088-.906l-32.247-16.12c-2.77 2.33-6.293 3.79-10.195 3.79C12.11 65.873 5 58.77 5 50c0-8.78 7.11-15.89 15.882-15.89 3.902 0 7.427 1.467 10.195 3.796l32.247-16.12c-.018-.307-.088-.597-.088-.913C63.236 12.11 70.338 5 79.118 5 87.89 5 95 12.11 95 20.873c0 8.78-7.11 15.89-15.882 15.89-3.91 0-7.436-1.467-10.195-3.805L36.676 49.086c.017.308.088.598.088.914z"/></svg>',
-  warning: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66.399998 66.399998"><g fill="red"><path d="M33.2 0C14.9 0 0 14.9 0 33.2c0 18.3 14.9 33.2 33.2 33.2 18.3 0 33.2-14.9 33.2-33.2C66.4 14.9 51.5 0 33.2 0zm0 59.4C18.7 59.4 7 47.6 7 33.2 7 18.7 18.8 7 33.2 7c14.4 0 26.2 11.8 26.2 26.2 0 14.4-11.8 26.2-26.2 26.2z"/><path d="M33.1 45.6c-1.4 0-2.5.5-3.5 1.5-.9 1-1.4 2.2-1.4 3.6 0 1.6.5 2.8 1.5 3.8 1 .9 2.1 1.3 3.4 1.3 1.3 0 2.4-.5 3.4-1.4 1-.9 1.5-2.2 1.5-3.7 0-1.4-.5-2.6-1.4-3.6-.9-1-2.1-1.5-3.5-1.5zM33.3 12.4c-1.5 0-2.8.5-3.7 1.6-.9 1-1.4 2.4-1.4 4.2 0 1.1.1 2.9.2 5.6l.8 13.1c.2 1.8.4 3.2.9 4.1.5 1.2 1.5 1.8 2.9 1.8 1.3 0 2.3-.7 2.9-1.9.5-1 .7-2.3.9-4l1.1-13.4c.1-1.3.2-2.5.2-3.8 0-2.2-.3-3.9-.8-5.1-.5-1-1.6-2.2-4-2.2z"/></g></svg>',
-  fullscreen: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 -10 100 100"><path d="M5-10v38.89L21.667 12.22 38.334 28.89l5.555-5.556L27.22 6.667 43.89-10H5zM105-10v38.89L88.333 12.22 71.667 28.89l-5.556-5.556L82.778 6.667 66.11-10H105zM5 90V51.11l16.667 16.667L38.334 51.11l5.555 5.557L27.22 73.333 43.89 90H5zM105 90V51.11L88.333 67.778 71.667 51.11l-5.556 5.557 16.667 16.666L66.11 90H105z" fill="#010101"/></svg>',
-  smallscreen: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 -10 100 100"><path d="M43.89 28.89V-10L27.22 6.667 10.555-10 5-4.445l16.667 16.667L5 28.89h38.89zM66.11 28.89V-10L82.78 6.667 99.444-10 105-4.445 88.334 12.222 105 28.89H66.11zM43.89 51.11V90L27.22 73.334 10.555 90 5 84.444l16.667-16.666L5 51.11h38.89zM66.11 51.11V90L82.78 73.334 99.444 90 105 84.444 88.334 67.778 105 51.11H66.11z" fill="#010101"/></svg>'
+  query: '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" x="0px" y="0px" width="100%" height="100%" viewBox="0 0 80 80" enable-background="new 0 0 80 80" xml:space="preserve"><g ></g><g >	<path d="M64.622,2.411H14.995c-6.627,0-12,5.373-12,12v49.897c0,6.627,5.373,12,12,12h49.627c6.627,0,12-5.373,12-12V14.411   C76.622,7.783,71.249,2.411,64.622,2.411z M24.125,63.906V15.093L61,39.168L24.125,63.906z"/></g></svg>',
+  queryInvalid: '<svg   xmlns:dc="http://purl.org/dc/elements/1.1/"   xmlns:cc="http://creativecommons.org/ns#"   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"   xmlns:svg="http://www.w3.org/2000/svg"   xmlns="http://www.w3.org/2000/svg"   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"   version="1.1"   x="0px"   y="0px"   width="100%"   height="100%"   viewBox="0 0 73.627 73.897"   enable-background="new 0 0 80 80"   xml:space="preserve"      inkscape:version="0.48.4 r9939"   sodipodi:docname="warning.svg"><metadata     ><rdf:RDF><cc:Work         rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /></cc:Work></rdf:RDF></metadata><defs      /><sodipodi:namedview     pagecolor="#ffffff"     bordercolor="#666666"     borderopacity="1"     objecttolerance="10"     gridtolerance="10"     guidetolerance="10"     inkscape:pageopacity="0"     inkscape:pageshadow="2"     inkscape:window-width="1855"     inkscape:window-height="1056"          showgrid="false"     inkscape:zoom="3.1936344"     inkscape:cx="36.8135"     inkscape:cy="36.9485"     inkscape:window-x="2625"     inkscape:window-y="24"     inkscape:window-maximized="1"     inkscape:current-layer="svg2" /><g     transform="translate(-2.995,-2.411)"      /><g     transform="translate(-2.995,-2.411)"     ><path       d="M 64.622,2.411 H 14.995 c -6.627,0 -12,5.373 -12,12 v 49.897 c 0,6.627 5.373,12 12,12 h 49.627 c 6.627,0 12,-5.373 12,-12 V 14.411 c 0,-6.628 -5.373,-12 -12,-12 z M 24.125,63.906 V 15.093 L 61,39.168 24.125,63.906 z"       inkscape:connector-curvature="0"        /></g><path     d="M 66.129381,65.903784 H 49.769875 c -1.64721,0 -2.889385,-0.581146 -3.498678,-1.63595 -0.609293,-1.055608 -0.491079,-2.422161 0.332391,-3.848223 l 8.179753,-14.167069 c 0.822934,-1.42633 1.9477,-2.211737 3.166018,-2.211737 1.218319,0 2.343086,0.785407 3.166019,2.211737 l 8.179751,14.167069 c 0.823472,1.426062 0.941686,2.792615 0.33239,3.848223 -0.609023,1.054804 -1.851197,1.63595 -3.498138,1.63595 z M 59.618815,60.91766 c 0,-0.850276 -0.68944,-1.539719 -1.539717,-1.539719 -0.850276,0 -1.539718,0.689443 -1.539718,1.539719 0,0.850277 0.689442,1.539718 1.539718,1.539718 0.850277,0 1.539717,-0.689441 1.539717,-1.539718 z m 0.04155,-9.265919 c 0,-0.873061 -0.707939,-1.580998 -1.580999,-1.580998 -0.873061,0 -1.580999,0.707937 -1.580999,1.580998 l 0.373403,5.610965 h 0.0051 c 0.05415,0.619747 0.568548,1.10761 1.202504,1.10761 0.586239,0 1.075443,-0.415756 1.188563,-0.968489 0.0092,-0.04476 0.0099,-0.09248 0.01392,-0.138854 h 0.01072 l 0.367776,-5.611232 z"          inkscape:connector-curvature="0"     style="fill:#aa8800" /></svg>',
+  download: '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="tiny" x="0px" y="0px" width="100%" height="100%" viewBox="0 0 100 100" xml:space="preserve"><g ></g><g >	<path fill-rule="evenodd" fill="#000000" d="M88,84v-2c0-2.961-0.859-4-4-4H16c-2.961,0-4,0.98-4,4v2c0,3.102,1.039,4,4,4h68   C87.02,88,88,87.039,88,84z M58,12H42c-5,0-6,0.941-6,6v22H16l34,34l34-34H64V18C64,12.941,62.939,12,58,12z"/></g></svg>',
+  share: '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1"  x="0px" y="0px" width="100%" height="100%" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100;" xml:space="preserve"><path d="M36.764,50c0,0.308-0.07,0.598-0.088,0.905l32.247,16.119c2.76-2.338,6.293-3.797,10.195-3.797  C87.89,63.228,95,70.338,95,79.109C95,87.89,87.89,95,79.118,95c-8.78,0-15.882-7.11-15.882-15.891c0-0.316,0.07-0.598,0.088-0.905  L31.077,62.085c-2.769,2.329-6.293,3.788-10.195,3.788C12.11,65.873,5,58.771,5,50c0-8.78,7.11-15.891,15.882-15.891  c3.902,0,7.427,1.468,10.195,3.797l32.247-16.119c-0.018-0.308-0.088-0.598-0.088-0.914C63.236,12.11,70.338,5,79.118,5  C87.89,5,95,12.11,95,20.873c0,8.78-7.11,15.891-15.882,15.891c-3.911,0-7.436-1.468-10.195-3.806L36.676,49.086  C36.693,49.394,36.764,49.684,36.764,50z"/></svg>',
+  warning: '<svg   xmlns:dc="http://purl.org/dc/elements/1.1/"   xmlns:cc="http://creativecommons.org/ns#"   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"   xmlns:svg="http://www.w3.org/2000/svg"   xmlns="http://www.w3.org/2000/svg"   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"   version="1.1"   x="0px"   y="0px"   viewBox="0 0 66.399998 66.399998"   enable-background="new 0 0 69.3 69.3"   xml:space="preserve"   height="100%"   width="100%"   inkscape:version="0.48.4 r9939"   ><g      transform="translate(-1.5,-1.5)"     style="fill:#ff0000"><path       d="M 34.7,1.5 C 16.4,1.5 1.5,16.4 1.5,34.7 1.5,53 16.4,67.9 34.7,67.9 53,67.9 67.9,53 67.9,34.7 67.9,16.4 53,1.5 34.7,1.5 z m 0,59.4 C 20.2,60.9 8.5,49.1 8.5,34.7 8.5,20.2 20.3,8.5 34.7,8.5 c 14.4,0 26.2,11.8 26.2,26.2 0,14.4 -11.8,26.2 -26.2,26.2 z"      inkscape:connector-curvature="0"       style="fill:#ff0000" /><path       d="m 34.6,47.1 c -1.4,0 -2.5,0.5 -3.5,1.5 -0.9,1 -1.4,2.2 -1.4,3.6 0,1.6 0.5,2.8 1.5,3.8 1,0.9 2.1,1.3 3.4,1.3 1.3,0 2.4,-0.5 3.4,-1.4 1,-0.9 1.5,-2.2 1.5,-3.7 0,-1.4 -0.5,-2.6 -1.4,-3.6 -0.9,-1 -2.1,-1.5 -3.5,-1.5 z"       inkscape:connector-curvature="0"       style="fill:#ff0000" /><path       d="m 34.8,13.9 c -1.5,0 -2.8,0.5 -3.7,1.6 -0.9,1 -1.4,2.4 -1.4,4.2 0,1.1 0.1,2.9 0.2,5.6 l 0.8,13.1 c 0.2,1.8 0.4,3.2 0.9,4.1 0.5,1.2 1.5,1.8 2.9,1.8 1.3,0 2.3,-0.7 2.9,-1.9 0.5,-1 0.7,-2.3 0.9,-4 L 39.4,25 c 0.1,-1.3 0.2,-2.5 0.2,-3.8 0,-2.2 -0.3,-3.9 -0.8,-5.1 -0.5,-1 -1.6,-2.2 -4,-2.2 z"       inkscape:connector-curvature="0"       style="fill:#ff0000" /></g></svg>',
+  fullscreen: '<svg   xmlns:dc="http://purl.org/dc/elements/1.1/"   xmlns:cc="http://creativecommons.org/ns#"   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"   xmlns:svg="http://www.w3.org/2000/svg"   xmlns="http://www.w3.org/2000/svg"   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"   version="1.1"      x="0px"   y="0px"   width="100%"   height="100%"   viewBox="5 -10 74.074074 100"   enable-background="new 0 0 100 100"   xml:space="preserve"   inkscape:version="0.48.4 r9939"   sodipodi:docname="noun_2186_cc.svg"><metadata     ><rdf:RDF><cc:Work         rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /></cc:Work></rdf:RDF></metadata><defs      /><sodipodi:namedview     pagecolor="#ffffff"     bordercolor="#666666"     borderopacity="1"     objecttolerance="10"     gridtolerance="10"     guidetolerance="10"     inkscape:pageopacity="0"     inkscape:pageshadow="2"     inkscape:window-width="640"     inkscape:window-height="480"          showgrid="false"     fit-margin-top="0"     fit-margin-left="0"     fit-margin-right="0"     fit-margin-bottom="0"     inkscape:zoom="2.36"     inkscape:cx="44.101509"     inkscape:cy="31.481481"     inkscape:window-x="65"     inkscape:window-y="24"     inkscape:window-maximized="0"     inkscape:current-layer="Layer_1" /><path     d="m -7.962963,-10 v 38.889 l 16.667,-16.667 16.667,16.667 5.555,-5.555 -16.667,-16.667 16.667,-16.667 h -38.889 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="m 92.037037,-10 v 38.889 l -16.667,-16.667 -16.666,16.667 -5.556,-5.555 16.666,-16.667 -16.666,-16.667 h 38.889 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="M -7.962963,90 V 51.111 l 16.667,16.666 16.667,-16.666 5.555,5.556 -16.667,16.666 16.667,16.667 h -38.889 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="M 92.037037,90 V 51.111 l -16.667,16.666 -16.666,-16.666 -5.556,5.556 16.666,16.666 -16.666,16.667 h 38.889 z"          inkscape:connector-curvature="0"     style="fill:#010101" /></svg>',
+  smallscreen: '<svg   xmlns:dc="http://purl.org/dc/elements/1.1/"   xmlns:cc="http://creativecommons.org/ns#"   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"   xmlns:svg="http://www.w3.org/2000/svg"   xmlns="http://www.w3.org/2000/svg"   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"   version="1.1"      x="0px"   y="0px"   width="100%"   height="100%"   viewBox="5 -10 74.074074 100"   enable-background="new 0 0 100 100"   xml:space="preserve"   inkscape:version="0.48.4 r9939"   sodipodi:docname="noun_2186_cc.svg"><metadata     ><rdf:RDF><cc:Work         rdf:about=""><dc:format>image/svg+xml</dc:format><dc:type           rdf:resource="http://purl.org/dc/dcmitype/StillImage" /></cc:Work></rdf:RDF></metadata><defs      /><sodipodi:namedview     pagecolor="#ffffff"     bordercolor="#666666"     borderopacity="1"     objecttolerance="10"     gridtolerance="10"     guidetolerance="10"     inkscape:pageopacity="0"     inkscape:pageshadow="2"     inkscape:window-width="1855"     inkscape:window-height="1056"          showgrid="false"     fit-margin-top="0"     fit-margin-left="0"     fit-margin-right="0"     fit-margin-bottom="0"     inkscape:zoom="2.36"     inkscape:cx="44.101509"     inkscape:cy="31.481481"     inkscape:window-x="65"     inkscape:window-y="24"     inkscape:window-maximized="1"     inkscape:current-layer="Layer_1" /><path     d="m 30.926037,28.889 0,-38.889 -16.667,16.667 -16.667,-16.667 -5.555,5.555 16.667,16.667 -16.667,16.667 38.889,0 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="m 53.148037,28.889 0,-38.889 16.667,16.667 16.666,-16.667 5.556,5.555 -16.666,16.667 16.666,16.667 -38.889,0 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="m 30.926037,51.111 0,38.889 -16.667,-16.666 -16.667,16.666 -5.555,-5.556 16.667,-16.666 -16.667,-16.667 38.889,0 z"          inkscape:connector-curvature="0"     style="fill:#010101" /><path     d="m 53.148037,51.111 0,38.889 16.667,-16.666 16.666,16.666 5.556,-5.556 -16.666,-16.666 16.666,-16.667 -38.889,0 z"          inkscape:connector-curvature="0"     style="fill:#010101" /></svg>'
 };
 
 },{}],43:[function(require,module,exports){
@@ -28557,9 +28544,6 @@ var extendCmInstance = function(yasqe) {
       if (root.Autocompleters[name]) yasqe.autocompleters.init(name, root.Autocompleters[name]);
     });
   }
-  yasqe.emit = function(event, data) {
-    root.signal(yasqe, event, data)
-  }
   yasqe.lastQueryDuration = null;
   yasqe.getCompleteToken = function(token, cur) {
     return require("./tokenUtils.js").getCompleteToken(yasqe, token, cur);
@@ -28639,61 +28623,6 @@ var extendCmInstance = function(yasqe) {
   yasqe.removePrefixes = function(prefixes) {
     return require("./prefixUtils.js").removePrefixes(yasqe, prefixes);
   };
-  yasqe.getVariablesFromQuery = function() {
-    //Use precise here. We want to be sure we use the most up to date state. If we're
-    //not, we might get outdated info from the current query (creating loops such
-    //as https://github.com/OpenTriply/YASGUI/issues/84)
-    //on caveat: this function won't work when query is invalid (i.e. when typing)
-    return $.map(yasqe.getTokenAt({ line: yasqe.lastLine(), ch: yasqe.getLine(yasqe.lastLine()).length }, true).state.variables, function(val,key) {return key});
-  }
-  //values in the form of {?var: 'value'}, or [{?var: 'value'}]
-  yasqe.getQueryWithValues = function(values) {
-    if (!values) return yasqe.getValue();
-    var injectString;
-    if (typeof values === 'string') {
-      injectString = values;
-    } else {
-      //start building inject string
-      if (!Array.isArray(values)) values = [values];
-      var variables = values.reduce(function(vars, valueObj) {
-        for (var v in valueObj) {
-          vars[v] = v;
-        }
-        return vars;
-      }, {})
-      var varArray = [];
-      for (var v in variables) {
-        varArray.push(v);
-      }
-
-      if (!varArray.length) return yasqe.getValue() ;
-      //ok, we've got enough info to start building the string now
-      injectString = "VALUES (" + varArray.join(' ') + ") {\n";
-      values.forEach(function(valueObj) {
-        injectString += "( ";
-        varArray.forEach(function(variable) {
-          injectString += valueObj[variable] || "UNDEF"
-        })
-        injectString += " )\n"
-      })
-      injectString += "}\n"
-    }
-    if (!injectString) return yasqe.getValue();
-
-    var newQuery = ""
-    var injected = false;
-    var gotSelect = false;
-    root.runMode(yasqe.getValue(), "sparql11", function(stringVal, className, row, col, state) {
-      if (className === "keyword" && stringVal.toLowerCase() === 'select') gotSelect = true;
-      newQuery += stringVal;
-      if (gotSelect && !injected && className === "punc" && stringVal === "{") {
-        injected = true;
-        //start injecting
-        newQuery += "\n" + injectString;
-      }
-    });
-    return newQuery
-  }
 
   yasqe.getValueWithoutComments = function() {
     var cleanedQuery = "";
@@ -28892,7 +28821,7 @@ var checkSyntax = function(yasqe, deepcheck) {
     if (state.OK == false) {
       if (!yasqe.options.syntaxErrorCheck) {
         //the library we use already marks everything as being an error. Overwrite this class attribute.
-        $(yasqe.getWrapperElement()).find(".sp-error").css("color", "black");
+        $(yasqe.getWrapperElement).find(".sp-error").css("color", "black");
         //we don't want to gutter error, so return
         return;
       }
@@ -29090,16 +29019,14 @@ root.drawButtons = function(yasqe) {
         .attr("title", "Set editor full screen")
         .click(function() {
           yasqe.setOption("fullScreen", true);
-          yasqe.emit('fullscreen-enter')
         })
     )
     .append(
       $(yutils.svg.getElement(imgs.smallscreen))
         .addClass("yasqe_smallscreenBtn")
-        .attr("title", "Set editor to normal size")
+        .attr("title", "Set editor to normale size")
         .click(function() {
           yasqe.setOption("fullScreen", false);
-          yasqe.emit('fullscreen-leave')
         })
     );
   yasqe.buttons.append(toggleFullscreen);
@@ -29359,7 +29286,7 @@ root.version = {
 var CodeMirror = require("codemirror"), tokenUtils = require("./tokenUtils.js");
 
 ("use strict");
-var lookFor = "PREFIX ";
+var lookFor = "PREFIX";
 module.exports = {
   findFirstPrefixLine: function(cm) {
     var lastLine = cm.lastLine();
@@ -29576,9 +29503,7 @@ module.exports = {
 
 },{}],46:[function(require,module,exports){
 "use strict";
-var $ = require("jquery"),
-  utils = require("./utils.js"),
-  YASQE = require("./main.js");
+var $ = require("jquery"), utils = require("./utils.js"), YASQE = require("./main.js");
 
 YASQE.getAjaxConfig = function(yasqe, callbackOrConfig) {
   var callback = typeof callbackOrConfig == "function" ? callbackOrConfig : null;
@@ -29590,15 +29515,13 @@ YASQE.getAjaxConfig = function(yasqe, callbackOrConfig) {
   if (config.handlers) $.extend(true, config.callbacks, config.handlers);
 
   if (!config.endpoint || config.endpoint.length == 0) return; // nothing to query!
-  var queryMode = yasqe.getQueryMode();
+
   /**
 	 * initialize ajax config
 	 */
   var ajaxConfig = {
     url: typeof config.endpoint == "function" ? config.endpoint(yasqe) : config.endpoint,
-    type: queryMode == "update"
-      ? "POST"
-      : typeof config.requestMethod == "function" ? config.requestMethod(yasqe) : config.requestMethod,
+    type: typeof config.requestMethod == "function" ? config.requestMethod(yasqe) : config.requestMethod,
     headers: {
       Accept: getAcceptHeader(yasqe, config)
     }
