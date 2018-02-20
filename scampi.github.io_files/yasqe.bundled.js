@@ -27726,7 +27726,7 @@ module.exports = function(YASQE, yasqe) {
             getSuggestionsAsHintObject(suggestions, completer, tempToken, hintList);
 			asyncTracker = asyncTracker - 1;
 			if (asyncTracker == 0) {
-			  finalizeCompleterCallbacks(validCompleters);
+			  finalizeCompleterCallbacks(validCompleters, returnObj);
 			  var wrappedCallback = function() {
 				return returnObj;
 			  };
@@ -27742,7 +27742,7 @@ module.exports = function(YASQE, yasqe) {
 	}
 	// INCOMPLETE
 	if (!shouldCallback) {
-		finalizeCompleterCallbacks(validCompleters);
+		finalizeCompleterCallbacks(validCompleters, returnObj);
 		return returnObj;
 	}
   };
@@ -27758,7 +27758,7 @@ module.exports = function(YASQE, yasqe) {
       var partialTokenLength = stringToAutocomplete.length;
       for (var i = 0; i < completer.get.length; i++) {
         var completion = completer.get[i];
-        if (completion.slice(0, partialTokenLength) == stringToAutocomplete) {
+        if ((Array.isArray(completion) ? completion[0] : completion).slice(0, partialTokenLength) == stringToAutocomplete) {
           suggestions.push(completion);
         }
       }
@@ -27772,18 +27772,23 @@ module.exports = function(YASQE, yasqe) {
   var getSuggestionsAsHintObject = function(suggestions, completer, token, hintList) {
     for (var i = 0; i < suggestions.length; i++) {
       var suggestedString = suggestions[i];
+	  var displayText = null;
+	  if (Array.isArray(suggestedString)) {
+		  displayText = suggestedString[0];
+		  suggestedString = suggestedString[1];
+	  }
       if (completer.postProcessToken) {
         suggestedString = completer.postProcessToken(token, suggestedString);
       }
       hintList.push({
         text: suggestedString,
-        displayText: suggestedString,
+        displayText: displayText ? displayText : suggestedString,
         hint: selectHint
       });
     }
   };
 
-  var finalizeCompleterCallbacks = function(validCompleters) {
+  var finalizeCompleterCallbacks = function(validCompleters, returnObj) {
 	for (var cI in validCompleters) {
       //if we have some autocompletion handlers specified, add these these to the object. Codemirror will take care of firing these
 	  var completer = validCompleters[cI];

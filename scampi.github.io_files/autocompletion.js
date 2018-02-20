@@ -96,7 +96,16 @@ YASQE.registerAutocompleter("sparqled", function(yasqe) {
         postProcessToken: postprocessResourceTokenForCompletion
     };
 });
-YASQE.defaults.autocompleters = ["prefixes", "variables", "sparqled"];
+YASQE.registerAutocompleter("test", function(yasqe){
+	return {
+		async: false,
+		bulk: false,
+		isValidCompletionPosition: function() {return true;},
+		autoShow: true,
+		get: ["test1", ["tloop", "t(int i = 0;...)"], "testtest"]
+	};
+})
+YASQE.defaults.autocompleters = ["prefixes", "variables", "sparqled", "test"];
 
 var yasqe = YASQE(document.getElementById("yasqe"), {
 	sparql: {
