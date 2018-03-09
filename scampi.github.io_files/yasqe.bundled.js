@@ -27748,7 +27748,7 @@ module.exports = function(YASQE, yasqe) {
   };
 
   var getSuggestionsFromToken = function(partialToken, completer, hintList) {
-    var stringToAutocomplete = partialToken.autocompletionString || partialToken.string;
+    var stringToAutocomplete = completer.getUsesCompleteToken ? partialToken : partialToken.autocompletionString || partialToken.string;
     var suggestions = [];
     if (tries[completer.name]) {
       suggestions = tries[completer.name].autoComplete(stringToAutocomplete);
@@ -28574,6 +28574,9 @@ var extendCmInstance = function(yasqe) {
   };
   yasqe.getNextNonWsToken = function(lineNumber, charNumber) {
     return require("./tokenUtils.js").getNextNonWsToken(yasqe, lineNumber, charNumber);
+  };
+  yasqe.getTriples = function(forSuggestion, useBuffer) {
+	return require("./tokenUtils.js").getTriples(yasqe, forSuggestion, useBuffer);
   };
   yasqe.collapsePrefixes = function(collapse) {
     if (collapse === undefined) collapse = true;
@@ -29785,10 +29788,10 @@ var getCompleteToken = function(yasqe, token, cur) {
     return token;
   }
 };
-var getPreviousNonWsToken = function(yasqe, line, token) {
+var getPreviousNonWsToken = function(yasqe, line, token_char) {
   var previousToken = yasqe.getTokenAt({
     line: line,
-    ch: token.start
+    ch: typeof(token_char) == "number" ? token_char : token_char.start
   });
   if (previousToken != null && previousToken.type == "ws") {
     previousToken = getPreviousNonWsToken(yasqe, line, previousToken);
@@ -29810,10 +29813,117 @@ var getNextNonWsToken = function(yasqe, lineNumber, charNumber) {
   return token;
 };
 
+var autoExitTokens = {'.': true, ';': true};
+var getTriplesBuffer;
+var getTriples = function(yasqe, forSuggestion, useBuffer) {
+	if(useBuffer && getTriplesBuffer){
+		return getTriplesBuffer;
+	}
+	var origCur = yasqe.getCursor();
+	var token = yasqe.getTokenAt(origCur);
+	if($.inArray("solutionModifier", token.state.stack) >= 0 && $.inArray("}", token.state.stack) >= 0 &&
+			(!forSuggestion || !(autoExitTokens[token.string] || $.inArray("constraint", token.state.stack) >= 0 || $.inArray(")", token.state.stack) >= 0))){
+		var data = [[]];
+		var suggestFor = [0, -1];
+		var curLine = origCur.line;
+		var foundExit = false;
+		var carrySub = 0;
+		var firstLine = true;
+		while(!foundExit && curLine >= 0){
+			switch(token.string){
+				case '{':
+					foundExit = true;
+					break;
+				case '.':
+					if(carrySub > 0){
+						for(var i = 0; i < carrySub; i++){
+							data[i + 1].unshift(data[0][0]);
+							if(i + 1 == suggestFor[0]){
+								suggestFor[1]++;
+							}
+						}
+						carrySub = 0;
+					}
+					data.unshift([]);
+					firstLine = false;
+					suggestFor[0]++;
+					break
+				case ';':
+					carrySub++;
+					data.unshift([]);
+					firstLine = false;
+					suggestFor[0]++;
+					break;
+				default:
+					data[0].unshift(token.string);
+					if(firstLine){
+						suggestFor[1]++;
+					}
+			}
+			token = yasqe.getPreviousNonWsToken(curLine, token.start);
+			if(!token.type){
+				while(curLine > 0){
+					curLine--;
+					token = yasqe.getPreviousNonWsToken(curLine, yasqe.getLine(curLine).length);
+					if(token.type){
+						break;
+					}
+				}
+			}
+		}
+		if(carrySub > 0){
+			for(var i = 0; i < carrySub; i++){
+				data[i + 1].unshift(data[0][0]);
+				if(i + 1 == suggestFor[0]){
+					suggestFor[1]++;
+				}
+			}
+			carrySub = 0;
+		}
+		if(foundExit){
+			token = yasqe.getTokenAt(origCur);
+			curLine = origCur.line;
+			foundExit = false;
+			var lineCount = yasqe.lineCount();
+			while(!foundExit && curLine < lineCount){
+				token = yasqe.getNextNonWsToken(curLine, token.end + 1);
+				if(!(token && token.type)){
+					while(curLine < lineCount){
+						curLine++;
+						token = yasqe.getNextNonWsToken(curLine, 1);
+						if(token.type){
+							break;
+						}
+					}
+				}
+				switch(token.string){
+					case '}':
+						foundExit = true;
+						break;
+					case '.':
+						data.push([]);
+						break;
+					case ';':
+						data.push([data[data.length - 1][0]]);
+						break;
+					default:
+						data[data.length - 1].push(token.string);
+				}
+			}
+			if(foundExit){
+				getTriplesBuffer = {data: data, cursor: suggestFor};
+				return getTriplesBuffer;
+			}
+		}
+	}
+	return;
+};
+
 module.exports = {
   getPreviousNonWsToken: getPreviousNonWsToken,
   getCompleteToken: getCompleteToken,
-  getNextNonWsToken: getNextNonWsToken
+  getNextNonWsToken: getNextNonWsToken,
+  getTriples: getTriples
 };
 
 },{}],48:[function(require,module,exports){
