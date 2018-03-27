@@ -192,7 +192,7 @@ var HistorySearch = {
     NumKeys : 0,
     addHistoryKey(name)
     {
-          this.contents.push(name);
+          this.contents.unshift(name);
           this.NumKeys++;  
     },
     getHistoryKey()
