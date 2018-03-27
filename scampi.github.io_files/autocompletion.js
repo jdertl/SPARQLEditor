@@ -185,7 +185,22 @@ YASQE.defaults.autocompleters = [
 	// "test",
 ];
 
-
+//Added 3/27 
+var HotKeyList = [];
+var HistorySearch = {
+    contents: HotKeyList,
+    NumKeys : 0,
+    addHistoryKey(name)
+    {
+          this.contents.push(name);
+          this.NumKeys++;  
+    },
+    getHistoryKey()
+    {
+        return this.contents;
+    }
+};
+//end edit 3/27
 
 var yasqe = YASQE(document.getElementById("yasqe"), {
 	sparql: {
