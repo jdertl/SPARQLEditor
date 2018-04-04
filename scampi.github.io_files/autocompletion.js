@@ -127,15 +127,13 @@ YASQE.registerAutocompleter("local_definitions", function(yasqe){
 			var triples = yasqe.getTriples(null, true);
 			var curLine = triples.cursor[0];
 			var seekVar = triples.data[curLine][0];
-			if(seekVar.indexOf("?") == -1){
-				token.subjectClass = seekVar;
-				return token;
-			}
-			var foundClass;
-			for(var i = 0; i < triples.data.length; i++){
-				if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
-					token.subjectClass = triples.data[i][2];
-					break;
+			if(seekVar.indexOf("?") >= 0){
+				var foundClass;
+				for(var i = 0; i < triples.data.length; i++){
+					if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
+						token.subjectClass = triples.data[i][2];
+						break;
+					}
 				}
 			}
 			return token
@@ -147,7 +145,7 @@ YASQE.registerAutocompleter("local_definitions", function(yasqe){
 
 				// INSERT SUGGESTION LOOKUP HERE
 				var suggestLevel = lookup;
-				if(suggestLevel && cursor[1] > 0){
+				if(suggestLevel && (cursor[1] > 0 && !classDesignators[triples.data[cursor[0]][1]])){
 					suggestLevel = suggestLevel[token.subjectClass];
 					if(suggestLevel && cursor[1] > 1){
 						suggestLevel = suggestLevel[triples.data[cursor[0]][1]];
@@ -177,9 +175,9 @@ YASQE.registerAutocompleter("local_definitions", function(yasqe){
 });
 
 YASQE.defaults.autocompleters = [
-	"prefixes",
+	// "prefixes",
 	"variables",
-	"properties",
+	// "properties",
 	// "sparqled",
 	"local_definitions",
 	// "test",

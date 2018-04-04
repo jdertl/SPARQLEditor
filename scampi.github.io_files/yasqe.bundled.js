@@ -27709,6 +27709,7 @@ module.exports = function(YASQE, yasqe) {
       }
     };
 	var asyncTracker = 0;
+	var finalizeUnlocked = false;
 	for (var cI in validCompleters) {
 	  var completer = validCompleters[cI];
 	  var tempToken = token;
@@ -27725,11 +27726,8 @@ module.exports = function(YASQE, yasqe) {
           var wrappedCallback = function(suggestions) {
             getSuggestionsAsHintObject(suggestions, completer, tempToken, hintList);
 			asyncTracker = asyncTracker - 1;
-			if (asyncTracker == 0) {
-			  finalizeCompleterCallbacks(validCompleters, returnObj);
-			  var wrappedCallback = function() {
-				return returnObj;
-			  };
+			if (asyncTracker == 0 && finalizeUnlocked) {
+			  finalizeCompleterSuggestions(validCompleters, returnObj);
 			  callback(returnObj);
 			}
           };
@@ -27741,8 +27739,9 @@ module.exports = function(YASQE, yasqe) {
 	  }
 	}
 	// INCOMPLETE
-	if (!shouldCallback) {
-		finalizeCompleterCallbacks(validCompleters, returnObj);
+	finalizeUnlocked = true;
+	if (!shouldCallback || asyncTracker == 0) {
+		finalizeCompleterSuggestions(validCompleters, returnObj);
 		return returnObj;
 	}
   };
@@ -27788,7 +27787,7 @@ module.exports = function(YASQE, yasqe) {
     }
   };
 
-  var finalizeCompleterCallbacks = function(validCompleters, returnObj) {
+  var finalizeCompleterSuggestions = function(validCompleters, returnObj) {
 	for (var cI in validCompleters) {
       //if we have some autocompletion handlers specified, add these these to the object. Codemirror will take care of firing these
 	  var completer = validCompleters[cI];
