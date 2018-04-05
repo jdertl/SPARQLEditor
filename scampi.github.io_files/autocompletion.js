@@ -183,22 +183,34 @@ YASQE.defaults.autocompleters = [
 	// "test",
 ];
 
-//Added 3/27 
-var HotKeyList = [];
-var HistorySearch = {
+//modify 4/5 whenever it call it will reorder as list 
+var HotKeyList = [], HistorySearch, index;
+
+HistorySearch = {
     contents: HotKeyList,
     NumKeys : 0,
     addHistoryKey(name)
-    {
-          this.contents.unshift(name);
-          this.NumKeys++;  
+    {   
+          index = this.contents.indexOf(name);
+          if(index == -1)
+          {
+               this.contents.unshift(name);
+               this.NumKeys++; 
+          }
+          else
+          {
+              this.contents.unshift(this.contents.splice(index, 1)[0]);
+              
+          }
+        
+          
     },
     getHistoryKey()
     {
         return this.contents;
     }
 };
-//end edit 3/27
+//end edit 4/5
 
 var yasqe = YASQE(document.getElementById("yasqe"), {
 	sparql: {
