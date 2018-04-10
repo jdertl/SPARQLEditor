@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+    <head>
+
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+        <meta content="utf-8" http-equiv="encoding">
+		<style type="text/css">
+			body {
+				margin-left: 5px;
+				margin-right: 5px;
+				text-align: center;
+			}
+		</style>
+	</head>
+
+<body>
+        <form name="form1" method="post" action="">
+        	<textarea style="font-size:20px;" textarea name="info" cols="70" rows="22" id="info">How to Use:
+
+	Thanks for using. This website is used to assist users to write a syntactically correct query statements.
+
+Inputs:
+	Users typed the query in corresponding textfields.
+
+	Subject: The subject of the triple query. (e.g. streets/places) The Subject textfield cannot be null.
+	Predicate: The predicate of the triple query. (e.g. length) The Predicate textfield can be empty.
+	Object: The object of the triple query. (e.g. 100) The Object textfield can be empty.
+
+Buttons:
+	Start Searching: After complete filling, the searching results will be shown as lists.
+	Reset Inputs: Reset all textfields values.
+
+	Other functionality is coming soon!
+            </textarea>
+</form>
+<input style="height:24px;font-size:16px;" input type="submit" name="close" id="close" onclick="window.opener = null; window.open('', '_self'); window.close();" value="Close Window">
+</body>
+
+</html>
