@@ -28619,6 +28619,9 @@ var extendCmInstance = function(yasqe) {
   yasqe.getTriples = function(forSuggestion, useBuffer) {
 	return require("./tokenUtils.js").getTriples(yasqe, forSuggestion, useBuffer);
   };
+  yasqe.invalidateTriples = function(){
+	  return require("./tokenUtils.js").invalidateTriples();
+  }
   yasqe.collapsePrefixes = function(collapse) {
     if (collapse === undefined) collapse = true;
     yasqe.foldCode(
