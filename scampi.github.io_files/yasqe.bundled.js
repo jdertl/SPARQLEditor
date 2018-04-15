@@ -27568,6 +27568,7 @@ module.exports = function(YASQE, yasqe) {
   var tries = {};
 
   yasqe.on("cursorActivity", function(yasqe, eventInfo) {
+	yasqe.invalidateTriples();
     autoComplete(true);
   });
   yasqe.on("change", function() {
@@ -27692,8 +27693,29 @@ module.exports = function(YASQE, yasqe) {
 	}
   };
 
+  var classDesignators = {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true};
+  var suggestionDelegate = function(completerGet, token, callback){
+	return [];
+  };
+
   var getCompletionHintsObject = function(validCompleters, callback, shouldCallback) {
 	var token = yasqe.getCompleteToken();
+	var triples = yasqe.getTriples(true, true);
+	if(triples){
+		var curLine = triples.cursor[0];
+		var seekVar = triples.data[curLine][0];
+		if(seekVar.indexOf("?") == -1){
+			token.subjectClass = seekVar;
+		}
+		else{
+			for(var i = 0; i < triples.data.length; i++){
+				if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
+					token.subjectClass = triples.data[i][2];
+					break;
+				}
+			}
+		}
+	}
 	var hintList = [];
 	var cur = yasqe.getCursor();
     var returnObj = {
@@ -27731,14 +27753,17 @@ module.exports = function(YASQE, yasqe) {
 			  callback(returnObj);
 			}
           };
-          completer.get(tempToken, wrappedCallback);
+		  if(typeof completer.get == "function"){
+			completer.get(tempToken, wrappedCallback);
+		  }
+		  else{
+			suggestionDelegate(completer.get, tempToken, wrappedCallback);
+		  }
         } else {
           getSuggestionsFromToken(tempToken, completer, hintList);
         }
-		// INCOMPLETE!
 	  }
 	}
-	// INCOMPLETE
 	finalizeUnlocked = true;
 	if (!shouldCallback || asyncTracker == 0) {
 		finalizeCompleterSuggestions(validCompleters, returnObj);
@@ -27754,13 +27779,17 @@ module.exports = function(YASQE, yasqe) {
     } else if (typeof completer.get == "function" && completer.async == false) {
       suggestions = completer.get(stringToAutocomplete);
     } else if (typeof completer.get == "object") {
-      var partialTokenLength = stringToAutocomplete.length;
-      for (var i = 0; i < completer.get.length; i++) {
-        var completion = completer.get[i];
-        if ((Array.isArray(completion) ? completion[0] : completion).slice(0, partialTokenLength) == stringToAutocomplete) {
-          suggestions.push(completion);
+	  if(completer.get instanceof Array){
+        for (var i = 0; i < completer.get.length; i++) {
+          var completion = completer.get[i];
+          if ((Array.isArray(completion) ? completion[0] : completion).includes(stringToAutocomplete)) {
+            suggestions.push(completion);
+          }
         }
-      }
+	  }
+	  else{
+		suggestions = suggestionDelegate(completer.get, stringToAutocomplete);
+	  }
     }
     getSuggestionsAsHintObject(suggestions, completer, partialToken, hintList);
   };
@@ -27799,7 +27828,17 @@ module.exports = function(YASQE, yasqe) {
         }
       }
 	}
-  }
+  };
+
+  var localDefinitions = {};
+  var addLocalDefinition = function(subject, predicate, object){
+  };
+
+  var getLocalDefinition = function(subject, predicate){
+  };
+
+  var removeLocalDefinition = function(subject, predicate, object){
+  };
 
   return {
     init: initCompleter,
@@ -27828,7 +27867,10 @@ module.exports = function(YASQE, yasqe) {
     autoComplete: autoComplete,
     getTrie: function(completer) {
       return typeof completer == "string" ? tries[completer] : tries[completer.name];
-    }
+    },
+	addLocalDefinition: addLocalDefinition,
+	getLocalDefinition: getLocalDefinition,
+	removeLocalDefinition: removeLocalDefinition
   };
 };
 
@@ -29813,15 +29855,16 @@ var getNextNonWsToken = function(yasqe, lineNumber, charNumber) {
 };
 
 var autoExitTokens = {'.': true, ';': true};
-var getTriplesBuffer;
+var triplesBuffer;
 var getTriples = function(yasqe, forSuggestion, useBuffer) {
-	if(useBuffer && getTriplesBuffer){
-		return getTriplesBuffer;
+	if(useBuffer && triplesBuffer){
+		return triplesBuffer;
 	}
 	var origCur = yasqe.getCursor();
 	var token = yasqe.getTokenAt(origCur);
+	var tokenString = token.string.trim();
 	if($.inArray("solutionModifier", token.state.stack) >= 0 && $.inArray("}", token.state.stack) >= 0 &&
-			(!forSuggestion || !(autoExitTokens[token.string] || $.inArray("constraint", token.state.stack) >= 0 || $.inArray(")", token.state.stack) >= 0))){
+			(!forSuggestion || !(autoExitTokens[tokenString] || $.inArray("constraint", token.state.stack) >= 0 || $.inArray(")", token.state.stack) >= 0))){
 		var data = [[]];
 		var suggestFor = [0, -1];
 		var curLine = origCur.line;
@@ -29829,7 +29872,8 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 		var carrySub = 0;
 		var firstLine = true;
 		while(!foundExit && curLine >= 0){
-			switch(token.string){
+			tokenString = token.string.trim();
+			switch(tokenString){
 				case '{':
 					foundExit = true;
 					break;
@@ -29854,7 +29898,7 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 					suggestFor[0]++;
 					break;
 				default:
-					data[0].unshift(token.string);
+					data[0].unshift(tokenString);
 					if(firstLine){
 						suggestFor[1]++;
 					}
@@ -29895,7 +29939,8 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 						}
 					}
 				}
-				switch(token.string){
+				tokenString = token.string.trim();
+				switch(tokenString){
 					case '}':
 						foundExit = true;
 						break;
@@ -29906,23 +29951,27 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 						data.push([data[data.length - 1][0]]);
 						break;
 					default:
-						data[data.length - 1].push(token.string);
+						data[data.length - 1].push(tokenString);
 				}
 			}
 			if(foundExit){
-				getTriplesBuffer = {data: data, cursor: suggestFor};
-				return getTriplesBuffer;
+				triplesBuffer = {data: data, cursor: suggestFor};
+				return triplesBuffer;
 			}
 		}
 	}
-	return;
+};
+
+var invalidateTriples = function(){
+	triplesBuffer = null;
 };
 
 module.exports = {
   getPreviousNonWsToken: getPreviousNonWsToken,
   getCompleteToken: getCompleteToken,
   getNextNonWsToken: getNextNonWsToken,
-  getTriples: getTriples
+  getTriples: getTriples,
+  invalidateTriples: invalidateTriples
 };
 
 },{}],48:[function(require,module,exports){
