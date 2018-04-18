@@ -108,45 +108,71 @@ YASQE.registerAutocompleter("test", function(yasqe){
 
 YASQE.registerAutocompleter("local_definitions", function(yasqe){
 	var classDesignators = {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true};
-	var filterSuggestions = function(list, token){
-		token = token || "";
-		var suggestions = [];
-		if(Array.isArray(list)){
-			var completion;
-			for(var k in list){
-				completion = list[k];
-				if((Array.isArray(completion) ? completion[0] : completion).includes(token)){
-					suggestions.push(completion);
-				}
-			}
+	
+	var lookup = {
+		"<streets>": {
+			"<nh:length>": ["Def: 100", "100"],  // Display first parameter, but insert second
+			"<nearby>": true,  // Only as predicate with no suggested objects
+		},
+		"<places>":{
+			"<nh:name>": "\"Fair Haven School\"",  // Both display and insert
+		},
+		"<schools>":{
+			"<nh:name>": "\"Something\"",
 		}
-		else{
-			for(var k in list){
-				if(k.includes(token)){
-					suggestions.push(k);
-				}
-			}
-		}
-		return suggestions;
-	}
+	};
+
 	return{
 		isValidCompletionPosition: function(){
-			return yasqe.getTriples(true, true) != null;
+			return yasqe.getTriples(true) != null;
 		},
-		get: {
-			getSubject: function(context, subject, predicate, object, token){
-				return [];
-			},
-			getPredicate: function(context, subject, predicate, object, token){
-				return [];
-			},
-			getObject: function(context, subject, predicate, object, token){
-				return [];
+		preProcessToken: function(token){
+			var triples = yasqe.getTriples(null, true);
+			var curLine = triples.cursor[0];
+			var seekVar = triples.data[curLine][0];
+			if(seekVar.indexOf("?") >= 0){
+				var foundClass;
+				for(var i = 0; i < triples.data.length; i++){
+					if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
+						token.subjectClass = triples.data[i][2];
+						break;
+					}
+				}
 			}
+			return token
 		},
+		get: function(token){
+			var triples = yasqe.getTriples(null, true);
+			var cursor = triples.cursor;
+			if(cursor[1] >= 0 && cursor[1] <= 2){
+
+				// INSERT SUGGESTION LOOKUP HERE
+				var suggestLevel = lookup;
+				if(suggestLevel && (cursor[1] > 0 && !classDesignators[triples.data[cursor[0]][1]])){
+					suggestLevel = suggestLevel[token.subjectClass];
+					if(suggestLevel && cursor[1] > 1){
+						suggestLevel = suggestLevel[triples.data[cursor[0]][1]];
+						if(suggestLevel && typeof(suggestLevel) != "boolean"){
+							return [suggestLevel];
+						}
+					}
+				}
+				if(suggestLevel){
+					var suggest = [];
+					for(var key in suggestLevel){
+						suggest.push(key);
+					}
+					return suggest;
+				}
+
+			}
+			return [];
+		},
+		// postProcessToken: function(token, suggestedString){
+		// },
 		async: false,
 		bulk: false,
-		autoShow: true,
+		autoShow: false,
 		getUsesCompleteToken: true
 	};
 });
@@ -159,35 +185,19 @@ YASQE.defaults.autocompleters = [
 	"local_definitions",
 	// "test",
 ];
-
-//modify 4/5 whenever it call it will reorder as list 
-var HotKeyList = [], HistorySearch, index;
-
-HistorySearch = {
-    contents: HotKeyList,
-    NumKeys : 0,
-    addHistoryKey(name)
-    {   
-          index = this.contents.indexOf(name);
-          if(index == -1)
-          {
-               this.contents.unshift(name);
-               this.NumKeys++; 
-          }
-          else
-          {
-              this.contents.unshift(this.contents.splice(index, 1)[0]);
-              
-          }
-        
-          
-    },
-    getHistoryKey()
-    {
-        return this.contents;
+function addthing(name, data1,data2)
+{
+    lookup[name]=data1;
+    if(data2 !=""){
+    lookup[name][data1]=data2;
     }
-};
-//end edit 4/5
+}
+
+//addthing(('<stee>'),('<leng>'),123 ); 
+
+
+
+
 
 var yasqe = YASQE(document.getElementById("yasqe"), {
 	sparql: {
