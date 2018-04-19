@@ -27815,45 +27815,35 @@ module.exports = function(YASQE, yasqe) {
       });
     }
   };
+
 //history funciton 
- var HotKeyList = [], index;
+  var HotKeyList = [];
+  var addhistory = function(name)
+  {   
+    var index = HotKeyList.indexOf(name);
+    if(index == -1)
+    {
+      HotKeyList.unshift(name);
+    }
+    else
+    {
+      HotKeyList.unshift(HotKeyList.splice(index, 1)[0]);
+    }
+  };
 
-
-
-   var addhistory = function(name)
-    {   
-          index = HotKeyList.indexOf(name);
-          if(index == -1)
-          {
-               HotKeyList.unshift(name);
-          }
-          else
-          {
-              HotKeyList.unshift(HotKeyList.splice(index, 1)[0]);
-              
-          }
-        
-          
-    };
-	
-	
-	
   var finalizeCompleterSuggestions = function(validCompleters, returnObj) {
-	  	var listmap = returnObj.list.map(function(e) { return e.text; })
-  	
+	var listmap = returnObj.list.map(function(e) { return e.text; })
   	for(var n=HotKeyList.length - 1;n >= 0;n--)
   	{	
-  		var pos = listmap.indexOf(HotKeyList[n]);
-  		if(pos!=-1)
-  		{
-  			var x = returnObj.list;
-  			x.unshift(x.splice(pos,1)[0]);
-  			listmap.unshift(listmap.splice(pos,1)[0]);
-  		}
-  	}
-	  
-	  
-	  for (var cI in validCompleters) {
+  	  var pos = listmap.indexOf(HotKeyList[n]);
+  	  if(pos!=-1)
+  	  {
+        var x = returnObj.list;
+        x.unshift(x.splice(pos,1)[0]);
+        listmap.unshift(listmap.splice(pos,1)[0]);
+      }
+    }
+	for (var cI in validCompleters) {
       //if we have some autocompletion handlers specified, add these these to the object. Codemirror will take care of firing these
 	  var completer = validCompleters[cI];
       if (completer.callbacks) {
@@ -27875,6 +27865,28 @@ module.exports = function(YASQE, yasqe) {
 
   var removeLocalDefinition = function(subject, predicate, object){
   };
+
+	var partialMatchFilter = function(list, token){
+		token = token.toLowerCase() || "";
+		var suggestions = [];
+		if(Array.isArray(list)){
+			var completion;
+			for(var k in list){
+				completion = list[k];
+				if((Array.isArray(completion) ? completion[0] : completion).toLowerCase().includes(token)){
+					suggestions.push(completion);
+				}
+			}
+		}
+		else{
+			for(var k in list){
+				if(k.toLowerCase().includes(token)){
+					suggestions.push(k);
+				}
+			}
+		}
+		return suggestions;
+	}
 
   return {
     init: initCompleter,
@@ -27907,7 +27919,8 @@ module.exports = function(YASQE, yasqe) {
     },
 	addLocalDefinition: addLocalDefinition,
 	getLocalDefinition: getLocalDefinition,
-	removeLocalDefinition: removeLocalDefinition
+	removeLocalDefinition: removeLocalDefinition,
+	partialMatchFilter: partialMatchFilter
   };
 };
 
@@ -27916,10 +27929,8 @@ module.exports = function(YASQE, yasqe) {
  */
 var selectHint = function(yasqe, data, completion) {
   if (completion.text != yasqe.getTokenAt(yasqe.getCursor()).string) {
-    
-	  yasqe.autocompleters.addhistory(completion.text);
-	  
-	  yasqe.replaceRange(completion.text, data.from, data.to);
+    yasqe.autocompleters.addhistory(completion.text);
+    yasqe.replaceRange(completion.text, data.from, data.to);
   }
 };
 

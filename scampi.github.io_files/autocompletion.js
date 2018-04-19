@@ -108,39 +108,18 @@ YASQE.registerAutocompleter("test", function(yasqe){
 
 YASQE.registerAutocompleter("local_definitions", function(yasqe){
 	var classDesignators = {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true};
-	var filterSuggestions = function(list, token){
-		token = token || "";
-		var suggestions = [];
-		if(Array.isArray(list)){
-			var completion;
-			for(var k in list){
-				completion = list[k];
-				if((Array.isArray(completion) ? completion[0] : completion).includes(token)){
-					suggestions.push(completion);
-				}
-			}
-		}
-		else{
-			for(var k in list){
-				if(k.includes(token)){
-					suggestions.push(k);
-				}
-			}
-		}
-		return suggestions;
-	}
 	return{
 		isValidCompletionPosition: function(){
 			return yasqe.getTriples(true, true) != null;
 		},
 		get: {
-			getSubject: function(context, subject, predicate, object, token){
+			getSubject: function(context, subjectClass, subject, predicate, object, token){
 				return [];
 			},
-			getPredicate: function(context, subject, predicate, object, token){
+			getPredicate: function(context, subjectClass, subject, predicate, object, token){
 				return [];
 			},
-			getObject: function(context, subject, predicate, object, token){
+			getObject: function(context, subjectClass, subject, predicate, object, token){
 				return [];
 			}
 		},
