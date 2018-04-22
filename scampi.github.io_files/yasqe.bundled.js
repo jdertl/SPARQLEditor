@@ -27891,9 +27891,45 @@ module.exports = function(YASQE, yasqe) {
   };
 
   var getLocalDefinition = function(subject, predicate){
+	if(subject){
+		var list = localDefinitions;
+		list[subject] = list[subject] || {};
+		if(predicate){
+			list = list[subject];
+			list[predicate] = list[predicate] || [];
   };
 
   var removeLocalDefinition = function(subject, predicate, object){
+	if(subject){
+		var list = localDefinitions;
+		list[subject] = list[subject] || {};
+		if(predicate){
+			list = list[subject];
+			list[predicate] = list[predicate] || [];
+			if(object){
+				list = list[predicate];
+				if(typeof object == 'table'){
+					var data;
+					for(var k in list){
+						data = list[k];
+						if(typeof data == 'table'){
+							if(data[0] == object[0] && data[1] == object[1]){
+								return;
+							}
+						}
+					}
+				}
+				else{
+					for(var k in list){
+						if(list[k] == object){
+							return;
+						}
+					}
+				}
+				list.remove(object);
+			}
+		}
+	}
   };
 
 	var partialMatchFilter = function(list, token){
