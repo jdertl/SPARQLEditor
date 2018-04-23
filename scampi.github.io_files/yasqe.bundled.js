@@ -27897,8 +27897,24 @@ module.exports = function(YASQE, yasqe) {
 		if(predicate){
 			list = list[subject];
 			list[predicate] = list[predicate] || [];
+			return 
+		}
   };
 
+  Array.prototype.indexOf = function(val) {
+	for (var i = 0; i < this.length; i++) {
+		if (this[i] == val) return i;
+	}
+	return -1;
+  };
+
+  Array.prototype.remove = function(val) {
+	var index = this.indexOf(val);
+	if (index > -1) {
+		this.splice(index, 1);
+	}
+  };
+  
   var removeLocalDefinition = function(subject, predicate, object){
 	if(subject){
 		var list = localDefinitions;
