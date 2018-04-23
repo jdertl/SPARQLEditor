@@ -27901,7 +27901,6 @@ module.exports = function(YASQE, yasqe) {
 		}
   };
 
-  //need to test
   Array.prototype.indexOf = function(val) {
 	for (var i = 0; i < this.length; i++) {
 		if (this[i] == val) return i;
