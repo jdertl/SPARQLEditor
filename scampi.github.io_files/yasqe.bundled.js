@@ -27897,8 +27897,10 @@ module.exports = function(YASQE, yasqe) {
 		if(predicate){
 			list = list[subject];
 			list[predicate] = list[predicate] || [];
-			return 
+			list = list[predicate];
+			return list;
 		}
+	}
   };
 
   Array.prototype.indexOf = function(val) {
