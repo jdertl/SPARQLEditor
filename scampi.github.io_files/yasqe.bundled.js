@@ -27891,16 +27891,14 @@ module.exports = function(YASQE, yasqe) {
   };
 
   var getLocalDefinition = function(subject, predicate){
+	var list = localDefinitions;
 	if(subject){
-		var list = localDefinitions;
-		list[subject] = list[subject] || {};
+		list = list[subject];
 		if(predicate){
-			list = list[subject];
-			list[predicate] = list[predicate] || [];
 			list = list[predicate];
-			return list;
 		}
 	}
+	return list;
   };
 
   Array.prototype.indexOf = function(val) {
