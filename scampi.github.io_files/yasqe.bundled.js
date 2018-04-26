@@ -27895,7 +27895,12 @@ module.exports = function(YASQE, yasqe) {
 	if(subject){
 		list = list[subject];
 		if(predicate){
-			list = list[predicate];
+			if(list){
+				list = list[predicate];
+			}
+			else{
+				return;
+			}
 		}
 	}
 	return list;
