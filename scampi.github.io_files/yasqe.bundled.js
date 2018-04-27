@@ -27695,6 +27695,42 @@ module.exports = function(YASQE, yasqe) {
 
   var classDesignators = {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true};
   var suggestionDelegate = function(completerGet, token, callback){
+	var triples = yasqe.getTriples(true, true);
+	if(triples){
+		var context = {
+			cursor: triples.cursor,
+			triples: triples.data,
+			variables: []
+		};
+		for(const line of triples.data){
+			for(const lineToken of line){
+				if(lineToken.indexOf("?") != -1){
+					context.variables.push(lineToken);
+				}
+			}
+		}
+		var use;
+		switch(triples.cursor[1]){
+			case 0:
+				use = completerGet.getSubject;
+				break;
+			case 1:
+				use = completerGet.getPredicate;
+				break;
+			case 2:
+				use = completerGet.getObject;
+				break;
+		}
+		if(use){
+			if(Array.isArray(use)){
+				return use;
+			}
+			else{
+				var data = triples.data[triples.cursor[0]];
+				return use(context, token.subjectClass, data[0], data[1], data[2], token, callback);
+			}
+		}
+	}
 	return [];
   };
 
