@@ -27942,50 +27942,53 @@ module.exports = function(YASQE, yasqe) {
 	return list;
   };
 
-  Array.prototype.indexOf = function(val) {
-	for (var i = 0; i < this.length; i++) {
-		if (this[i] == val) return i;
-	}
-	return -1;
-  };
-
-  Array.prototype.remove = function(val) {
-	var index = this.indexOf(val);
+  var arrayRemove = function(arr, val) {
+	var index = arr.indexOf(val);
 	if (index > -1) {
-		this.splice(index, 1);
+		arr.splice(index, 1);
 	}
   };
   
   var removeLocalDefinition = function(subject, predicate, object){
 	if(subject){
 		var list = localDefinitions;
-		list[subject] = list[subject] || {};
 		if(predicate){
 			list = list[subject];
-			list[predicate] = list[predicate] || [];
 			if(object){
-				list = list[predicate];
-				if(typeof object == 'table'){
-					var data;
-					for(var k in list){
-						data = list[k];
-						if(typeof data == 'table'){
-							if(data[0] == object[0] && data[1] == object[1]){
-								return;
+				if(list){
+					list = list[predicate];
+					if(list){
+						if(Array.isArray(object)){
+							var data;
+							for(var k in list){
+								data = list[k];
+								if(Array.isArray(data) && data[0] == object[0] && data[1] == object[1]){
+									delete list[k];
+									break;
+								}
+							}
+						}
+						else{
+							for(var k in list){
+								if(list[k] == object){
+									delete list[k];
+									break;
+								}
 							}
 						}
 					}
 				}
-				else{
-					for(var k in list){
-						if(list[k] == object){
-							return;
-						}
-					}
-				}
-				list.remove(object);
+			}
+			else{
+				delete list[predicate];
 			}
 		}
+		else{
+			delete list[subject];
+		}
+	}
+	else{
+		localDefinitions = {};
 	}
   };
 
