@@ -27704,7 +27704,7 @@ module.exports = function(YASQE, yasqe) {
 		};
 		for(const line of triples.data){
 			for(const lineToken of line){
-				if(lineToken.indexOf("?") != -1){
+				if(lineToken.indexOf("?") != -1 && context.variables.indexOf(lineToken) == -1){
 					context.variables.push(lineToken);
 				}
 			}
