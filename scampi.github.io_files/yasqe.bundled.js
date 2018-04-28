@@ -27892,28 +27892,32 @@ module.exports = function(YASQE, yasqe) {
 	}
   };
 
+  var isString = function(check){
+	return typeof check == 'string' || check instanceof String;
+  };
+
   var localDefinitions = {};
   var addLocalDefinition = function(subject, predicate, object){
-	if(subject){
+	if(subject && isString(subject)){
 		var list = localDefinitions;
 		list[subject] = list[subject] || {};
-		if(predicate){
+		if(predicate && isString(predicate)){
 			list = list[subject];
 			list[predicate] = list[predicate] || [];
 			if(object){
 				list = list[predicate];
-				if(typeof object == 'table'){
-					var data;
-					for(var k in list){
-						data = list[k];
-						if(typeof data == 'table'){
-							if(data[0] == object[0] && data[1] == object[1]){
+				if(Array.isArray(object)){
+					if(isString(object[0]) && isString(object[1])){
+						var data;
+						for(var k in list){
+							data = list[k];
+							if(Array.isArray(data) && data[0] == object[0] && data[1] == object[1]){
 								return;
 							}
 						}
 					}
 				}
-				else{
+				else if(isString(object)){
 					for(var k in list){
 						if(list[k] == object){
 							return;
