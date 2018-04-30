@@ -27853,7 +27853,7 @@ module.exports = function(YASQE, yasqe) {
   };
 
 //history funciton 
-  var HotKeyList = [];
+  var HotKeyList = [],HotKeySize=10;
   var addhistory = function(name)
   {   
     var index = HotKeyList.indexOf(name);
@@ -27865,6 +27865,11 @@ module.exports = function(YASQE, yasqe) {
     {
       HotKeyList.unshift(HotKeyList.splice(index, 1)[0]);
     }
+	if(HotKeyList.length>HotKeySize)
+	{
+		HotKeyList.pop()
+	}
+
   };
 
   var finalizeCompleterSuggestions = function(validCompleters, returnObj) {
