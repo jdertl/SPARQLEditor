@@ -27997,7 +27997,7 @@ module.exports = function(YASQE, yasqe) {
   };
 
 	var partialMatchFilter = function(list, token){
-		token = token.toLowerCase() || "";
+		token = token ? token.toLowerCase() : "";
 		var suggestions = [];
 		if(Array.isArray(list)){
 			var completion;
