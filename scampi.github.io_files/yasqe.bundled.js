@@ -27824,7 +27824,7 @@ module.exports = function(YASQE, yasqe) {
         }
 	  }
 	  else{
-		suggestions = suggestionDelegate(completer.get, stringToAutocomplete);
+		suggestions = suggestionDelegate(completer.get, partialToken);
 	  }
     }
     getSuggestionsAsHintObject(suggestions, completer, partialToken, hintList);
