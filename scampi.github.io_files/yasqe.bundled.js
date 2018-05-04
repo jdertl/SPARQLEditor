@@ -27723,7 +27723,7 @@ module.exports = function(YASQE, yasqe) {
 		}
 		if(use){
 			if(Array.isArray(use)){
-				return use;
+				return partialMatchFilter(use, token.autocompletionString || token.string);
 			}
 			else{
 				var data = triples.data[triples.cursor[0]];
@@ -27816,12 +27816,7 @@ module.exports = function(YASQE, yasqe) {
       suggestions = completer.get(stringToAutocomplete);
     } else if (typeof completer.get == "object") {
 	  if(completer.get instanceof Array){
-        for (var i = 0; i < completer.get.length; i++) {
-          var completion = completer.get[i];
-          if ((Array.isArray(completion) ? completion[0] : completion).includes(stringToAutocomplete)) {
-            suggestions.push(completion);
-          }
-        }
+		suggestions = partialMatchFilter(completer.get, stringToAutocomplete instanceof Object ? (partialToken.autocompletionString || partialToken.string) : stringToAutocomplete);
 	  }
 	  else{
 		suggestions = suggestionDelegate(completer.get, partialToken);
