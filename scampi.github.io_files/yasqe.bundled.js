@@ -30088,11 +30088,11 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 					}
 			}
 			token = yasqe.getPreviousNonWsToken(curLine, token.start);
-			if(!token.type){
+			if(!(token && token.type)){
 				while(curLine > 0){
 					curLine--;
 					token = yasqe.getPreviousNonWsToken(curLine, yasqe.getLine(curLine).length);
-					if(token.type){
+					if(token && token.type){
 						break;
 					}
 				}
@@ -30118,7 +30118,7 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 					while(curLine < lineCount){
 						curLine++;
 						token = yasqe.getNextNonWsToken(curLine, 1);
-						if(token.type){
+						if(token && token.type){
 							break;
 						}
 					}

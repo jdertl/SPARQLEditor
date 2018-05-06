@@ -4,20 +4,30 @@ var data = {
 	"apartment": {
 		"baths": ["1", "2"],
 		"bedrooms": ["1", "2"],
-		"nearby": ["<school>"],
+		"nearby": [["Looking for <school>", ""]],
 		"pets_allowed": ["true", "false"]
 	},
 	"house": {
 		"baths": ["1", "2", "3", "4"],
 		"bedrooms": ["1", "2", "3"],
-		"nearby": ["<school>"],
+		"nearby": [["Looking for <school>", ""]],
 		"sqft": [["Small", "1000"], ["Medium", "2500"], ["Large", "4000"]]
+	},
+	"park": {
+		"name": true,
+		"national": ["true", "false"],
+		"night_lighting": ["true", "false"],
+		"waterfront": [["Looking for <pond>", ""]]
+	},
+	"pond": {
+		"name": true,
+		"fishing": ["true", "false"]
 	},
 	"school": {
 		"capacity": [["Small", "250"], ["Medium", "400"], ["Large", "650"]],
 		"grades": ["\"K_12\"", "\"K_5\"", "\"6_8\"", "\"9_12\""],
 		"name": true,
-		"nearby": ["<apartment>", "<house>"],
+		"nearby": [["Looking for <apartment>", ""], ["Looking for <house>", ""]],
 		"staff": ["100", "200", "400"]
 	}
 };
