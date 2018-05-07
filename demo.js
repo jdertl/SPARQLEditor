@@ -4,13 +4,13 @@ var data = {
 	"apartment": {
 		"baths": ["1", "2"],
 		"bedrooms": ["1", "2"],
-		"nearby": [["Looking for <school>", ""]],
+		"nearby": [["Looking for <park>", ""], ["Looking for <pond>", ""], ["Looking for <school>", ""]],
 		"pets_allowed": ["true", "false"]
 	},
 	"house": {
 		"baths": ["1", "2", "3", "4"],
 		"bedrooms": ["1", "2", "3"],
-		"nearby": [["Looking for <school>", ""]],
+		"nearby": [["Looking for <park>", ""], ["Looking for <pond>", ""], ["Looking for <school>", ""]],
 		"sqft": [["Small", "1000"], ["Medium", "2500"], ["Large", "4000"]]
 	},
 	"park": {
