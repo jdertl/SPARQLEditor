@@ -27693,7 +27693,6 @@ module.exports = function(YASQE, yasqe) {
 	}
   };
 
-  var classDesignators = {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true};
   var suggestionDelegate = function(completerGet, token, callback){
 	var triples = yasqe.getTriples(true, true);
 	if(triples){
@@ -27740,14 +27739,17 @@ module.exports = function(YASQE, yasqe) {
 	if(triples){
 		var curLine = triples.cursor[0];
 		var seekVar = triples.data[curLine][0];
-		if(seekVar.indexOf("?") == -1){
-			token.subjectClass = seekVar;
-		}
-		else{
-			for(var i = 0; i < triples.data.length; i++){
-				if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
-					token.subjectClass = triples.data[i][2];
-					break;
+		if(seekVar){
+			if(seekVar.indexOf("?") == -1){
+				token.subjectClass = seekVar;
+			}
+			else{
+				var classDesignators = yasqe.autocompleters.classDesignators;
+				for(var i = 0; i < triples.data.length; i++){
+					if(i != curLine && triples.data[i][0] == seekVar && classDesignators[triples.data[i][1]]){
+						token.subjectClass = triples.data[i][2];
+						break;
+					}
 				}
 			}
 		}
@@ -28047,6 +28049,7 @@ module.exports = function(YASQE, yasqe) {
     getTrie: function(completer) {
       return typeof completer == "string" ? tries[completer] : tries[completer.name];
     },
+	classDesignators: {"a": true, "rdf:type": true, "https://www.w3.org/1999/02/22-rdf-syntax-ns#type": true},
 	addLocalDefinition: addLocalDefinition,
 	getLocalDefinition: getLocalDefinition,
 	removeLocalDefinition: removeLocalDefinition,
@@ -28430,17 +28433,15 @@ var $ = require("jquery");
 module.exports = function(yasqe) {
   return {
     isValidCompletionPosition: function() {
-      var token = yasqe.getTokenAt(yasqe.getCursor());
-      if (token.type != "ws") {
-        token = yasqe.getCompleteToken(token);
-        if (token && (token.string[0] === '?' || token.string[0] === '$')) {
-          return true;
-        }
-      }
-      return false;
+	  var triples = yasqe.getTriples(true, true);
+	  if(triples){
+		  var cursor = triples.cursor[1];
+		  return cursor == 0 || (cursor == 2 && !yasqe.autocompleters.classDesignators[triples.data[triples.cursor[0]][1]]);
+	  }
+	  return false;
     },
     get: function(token) {
-      if (token.trim().length == 0) return []; //nothing to autocomplete
+	  var trimToken = token.trim();
       var distinctVars = {};
       //do this outside of codemirror. I expect jquery to be faster here (just finding dom elements with classnames)
       //and: this'll still work when the query is incorrect (i.e., when simply typing '?')
@@ -28458,10 +28459,10 @@ module.exports = function(yasqe) {
           if (variable.length <= 1) return;
 
           //it should match our token ofcourse
-          if (variable.indexOf(token) !== 0) return;
+          if (!variable.includes(trimToken)) return;
 
           //skip exact matches
-          if (variable == token) return;
+          if (variable == trimToken) return;
 
           //store in map so we have a unique list
           distinctVars[variable] = true;
@@ -30082,6 +30083,19 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 					suggestFor[0]++;
 					break;
 				default:
+					if(token.type != "ws"){
+						var prevString = yasqe.getLine(curLine).charAt(token.start - 1);
+						while(prevString.length != 0){
+							if(prevString.trim().length != 0){
+								token = yasqe.getPreviousNonWsToken(curLine, token.start);
+								tokenString = token.string.concat(tokenString);
+							}
+							else{
+								break;
+							}
+							prevString = yasqe.getLine(curLine).charAt(token.start - 1);
+						}
+					}
 					data[0].unshift(tokenString);
 					if(firstLine){
 						suggestFor[1]++;
@@ -30135,7 +30149,14 @@ var getTriples = function(yasqe, forSuggestion, useBuffer) {
 						data.push([data[data.length - 1][0]]);
 						break;
 					default:
-						data[data.length - 1].push(tokenString);
+						var prevString = yasqe.getLine(curLine).charAt(token.start - 1);
+						var curData = data[data.length - 1];
+						if(prevString.length != 0 && prevString.trim().length != 0){
+							curData[curData.length - 1] = curData[curData.length - 1].concat(tokenString);
+						}
+						else{
+							curData.push(tokenString);
+						}
 				}
 			}
 			if(foundExit){

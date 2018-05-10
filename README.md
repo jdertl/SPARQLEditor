@@ -1,21 +1,49 @@
-### TODO:
-* Catch errors from autocompletes
-	* Possibly introduce "finalized" flag to autocompleters to allow bypass to error catch for debugging
+General Usage:
+	> Making a Custom Autocompleter Using Triple “Get” Functions:
+		- Inside of registered autocompleter, change the “get” entry to:
+			get: {
+				getSubject: function( ... ){ ... },		(or String Array)
+				getPredicate: function( ... ){ ... },	(or String Array)
+				getObject: function( ... ){ ... }		(or String Array)
+			}
+		- Each function’s parameters are in the following order:
+			+ context		(Object)
+			+ subjectClass	(String or undefined)
+			+ subject		(String or undefined)
+			+ predicate		(String or undefined)
+			+ object		(String or undefined)
+			+ token			(Object)
+			+ callback		(Function)
+		- Operates exactly as normal YASQE “get” Function / Array, with matching return values, “token”, and “callback”
 
+	> Using Partial Match Filter:
+		- Assigned at “yasqe.autocompleters.partialMatchFilter(list, token)”
+			+ list  (Array or Object)
+				: Array of strings that should be checked
+				: Object with keys only as strings that should be checked
+			+ token  (String or undefined)
+				: String to search for inside of “list”
+				: Undefined will default to returning all values
+			+ Returns an array of strings that match entries for “list” based on any matches to “token” without case sensitivity
 
-### COMPLETED:
-* Support for multiple suggestion list recommendations without conflicting
-* Allow for replacement of suggestions with replacements that differ from displayed text
-	* Previous usage: `autocompleter.get(...)` returned ["inserted1", "inserted2", ...]
-	* New usage: `autocompleter.get(...)` can return ["inserted1", ["displayed2", "inserted2"], ...]
-* Function to extract all triple statements
-	* `yasqe.getTriples(forSuggestion, useBuffer) -> {data = [["token1", "token2", ...], ...], cursor = [lineNumber, entryNumber]} or null`
-		* `forSuggestion` : True if the returned information is intended for an autocompleter.  Allows for returning null to short circuit if the cursor is in a bad suggestion location.  Returns null if the cursor is outside of a triples block or query is improper.
-		* `useBuffer` : True to return the last created triples object to reduce load.
-		* `data` : Array of arrays that contain (if formatted correctly) the triples block query.  If the cursor is in a position that is whitespace or partial characters, it is inserted even if it breaks triple format.  Keywords such as "filter" are not destroyed but instead inserted based on tokenization of YASQE.  Triple format is not enforced in order to allow incomplete lines.
-		* `cursor` : `data[lineNumber][entryNumber]` would correspond to the token that the cursor was found at.  **Note:**  `lineNumber` may "move" in certain situations, such as at the end of a line after a puncuation (".", ";") where the cursor would physically be on line x, but would technically be on line x + 1 as it would now be in the entries after the puncuation.  `entryNumber` may also be negative, which would correspond to the cursor being in whitespace before a line's existing triple statements.
-* `autocompleter.getUsesCompleteToken` can be set to "true" on `YASQE.registerAutocompleter(...)` initialization table to enable overriding of token parameter passed to `autocompleter.get(...)`, allows for full token data instead of only token string
-* Modify previous token search to use character number
-	* Previous: `yasqe.getPreviousNonWsToken(yasqe, line, token)` only allowed `token` to be full token data
-	* New: `yasqe.getPreviousNonWsToken(yasqe, line, token_char)` allows for previous usage or using a character number to designate position
-* Example autocomplete using `yasqe.getTriples(...)` to suggest custom subject, predicate, and object data
+	> Simple Local Definitions:
+		- Provides a simple dictionary style lookup for triple statements
+			+ yasqe.autocompleters.addLocalDefinition(subject, predicate, object)
+				: subject, predicate, object  (Strings or undefined)
+
+				: addLocalDefinition(“<my_subject>”)
+					Adds only “<my_subject>” to suggestions for class and subject sections
+				: addLocalDefinition(“<my_subject>”, “<my_predicate>”, “\”My Object\””)
+					Adds subject, predicate, and object to corresponding sections
+				: addLocalDefinition(null, “<my_predicate>”)
+					Currently illegal as subject has to be a String
+
+			+ yasqe.autocompleters.removeLocalDefinition(subject, predicate, object)
+				: subject, predicate, object  (Strings or undefined)
+
+				: removeLocalDefinition(“<my_subject>”)
+					Removes the “<my_subject>” class and ALL children
+				: removeLocalDefinition(“<my_subject>”, “<my_predicate>”, “\”My Object\””)
+					Removes the “My Object” object from the “<my_subject>” “<my_predicate>” chain of Strings
+				: removeLocalDefinition(null, “<my_predicate>”)
+					Currently illegal as subject has to be a String
